@@ -220,3 +220,8 @@
 
 - [x] Assess Hostinger Business shared hosting and Agency Hosting API compatibility with the Node.js/React/Express/Drizzle platform. Official Hostinger documentation confirms Business Node.js Web Apps support Express/React/Vite, while Agency `build-assets` is static-only.
 - [x] Document the recommended same-server or split-server deployment, migration blockers, and required Hostinger capabilities without exposing secrets or attempting deployment. Added `HOSTINGER_DEPLOYMENT_ASSESSMENT.md`; no deployment or credential operation was attempted.
+
+## New Hostinger repository export — 25 Aug 2026
+
+- [ ] Create the private `nikahsaathi_platform_hostinger` repository and push the current validated project without secrets.
+- [ ] Verify the new remote branch, commit hash and clean working tree, then record the repository URL.
