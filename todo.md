@@ -66,3 +66,28 @@
 - [x] Capture desktop and responsive screenshots for visual verification.
 - [x] Update IMPLEMENTATION_MASTER_PLAN.md statuses and evidence.
 - [x] Save a checkpoint after the foundation is complete.
+
+## Next implementation phase: operations CRUD and safeguards
+
+- [x] Add admin form to create, edit, activate, deactivate and version safety rules.
+- [x] Add blocked-domain severity controls with validation and active-state management.
+- [x] Add editable community category management with backend update support and Coming Soon safeguards.
+- [x] Add moderator assignment and removal controls in the community manager.
+- [x] Require typed audit confirmation for both subscription plan and user-subscription changes.
+- [x] Add profile-field policy editing with sensitive-field guardrails and preview.
+- [x] Add high-risk action confirmation UI requiring human decision and explicit second confirmation.
+- [x] Add mutation-level Vitest coverage for community category update, moderator removal, blocked-domain update/status and operator safeguards.
+- [x] Run full typecheck, tests, build and responsive visual verification for this phase.
+- [x] Update IMPLEMENTATION_MASTER_PLAN.md and save a phase checkpoint.
+
+## Next phase: client and operations completion
+
+- [x] Add full rule-management UI with edit fields plus confirmation/audit prompt before activation/version actions.
+- [x] Add live moderator capability preview showing current assignment, before state and after-assignment state.
+- [x] Add server-backed subscription entitlement preview with expiry and Free fallback state.
+- [x] Expand profile-policy editor to Free, Basic and Advanced toggles with sensitive-field safeguards.
+- [x] Implement a real high-risk approval dialog with operator-selected decision and typed second confirmation.
+- [x] Add Flutter client contract documentation and generated-client integration notes.
+- [x] Add focused Vitest coverage for the new admin mutations and confirmation guards.
+- [x] Run typecheck, tests, production build and responsive screenshots.
+- [x] Update IMPLEMENTATION_MASTER_PLAN.md and save the next checkpoint.

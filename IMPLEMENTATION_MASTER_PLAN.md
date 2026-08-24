@@ -54,3 +54,35 @@ The next implementation increment should add moderator assignment CRUD, a full C
 | Coming Soon member-list guard | `communityAccess` returns `canViewMembers: false`; `communityMembers` rejects non-active communities; `getCommunityPermissions` and tests cover the read-only rule. |
 
 Final verification after hardening: `pnpm check`, `pnpm test` and `pnpm build` pass. The test suite contains 6 files and 17 passing tests.
+
+### Current phase — admin CRUD and client contract readiness
+
+The operations console now includes draft rule creation, rule editing, activation/pause with audit prompts, version snapshots, blocked-domain create/pause controls, community staging and status controls, scoped moderator assignment preview, server-derived plan assignment with field-count and expiry preview, all-plan profile policy toggles with sensitive-field confirmations, and a real high-risk approval dialog with human-selected decision plus typed `CONFIRM`.
+
+The Flutter integration notes now define the canonical contract source, generated Dart model/version workflow, refresh and breaking-change policy, central authentication adapter, privacy-safe logging, backend error mapping, and release gates for policy, communities and entitlements.
+
+Validation evidence: `pnpm check` passed; `pnpm test` passed with 7 files and 19 tests; `pnpm build` passed; desktop and mobile responsive previews were captured successfully. The current checkpoint remains `83e12307` until this phase is saved.
+
+### Final preview-hardening phase
+
+The console now loads moderator assignment state from `communityModeratorPreview` and displays before-assignment versus after-assignment capabilities for the selected community and operator. Subscription assignment uses `subscriptionEntitlementPreview`, returning the server-derived effective plan, approved field count, expiry state and Free fallback instead of relying only on client-side policy counting.
+
+Validation evidence: `pnpm check` passed; `pnpm test` passed with 7 files and 25 tests; `pnpm build` passed; the responsive mobile preview was captured successfully. The current phase is ready for checkpoint save.
+
+### Final admin CRUD remediation
+
+Completed the remaining admin-console gaps: blocked-domain severity is selectable and editable; community eligibility is collected and editable; moderator assignments can be inspected and removed; subscription plans can be edited with typed audit confirmation; and focused admin input validation tests cover domain normalization, eligibility rules and plan confirmation.
+
+Validation evidence: `pnpm check` passed; `pnpm test` passed with 8 files and 28 tests; `pnpm build` passed; desktop and mobile responsive previews were captured successfully. The next checkpoint should include this remediation.
+
+### Final gap remediation before fresh checkpoint
+
+Completed the remaining review findings: community category is now editable through the admin update contract and UI; user subscription changes require typed `CONFIRM` audit confirmation; plan administration remains confirmation-gated; and mutation-level validation tests cover invalid domains and missing/incorrect subscription confirmations.
+
+Validation evidence: `pnpm check` passed; `pnpm test` passed with 8 files and 31 tests; `pnpm build` passed; the mobile responsive preview was captured successfully. A fresh checkpoint is required after this entry.
+
+### Final CRUD coverage remediation
+
+Added deterministic mutation-level validation coverage for community category/eligibility updates, moderator removal, blocked-domain update/status flows, and subscription confirmation boundaries. The API now supports editable community categories and requires typed `CONFIRM` for user subscription changes as well as plan administration.
+
+Validation evidence: `pnpm check` passed; `pnpm test` passed with 9 files and 34 tests; `pnpm build` passed. The operations console remains responsive from the previously captured desktop and mobile previews. A fresh checkpoint is ready to be saved.

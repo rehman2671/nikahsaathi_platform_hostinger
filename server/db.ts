@@ -17,6 +17,7 @@ import {
   users,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { getCommunityPermissions } from "./communityPolicy";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -104,6 +105,12 @@ export async function createSafetyRule(input: typeof safetyRules.$inferInsert) {
   return Number(result[0].insertId);
 }
 
+export async function updateSafetyRule(id: number, input: Partial<Pick<typeof safetyRules.$inferInsert, "name" | "pattern" | "scope" | "language" | "severity" | "action">>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(safetyRules).set(input).where(eq(safetyRules.id, id));
+}
+
 export async function setSafetyRuleStatus(id: number, isActive: boolean) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
@@ -125,6 +132,19 @@ export async function rollbackSafetyRule(ruleId: number, version: number, actorI
   if (!target) throw new Error("Rule version not found");
   await db.update(safetyRules).set({ pattern: target.pattern, action: target.action as typeof safetyRules.$inferSelect.action, version: target.version }).where(eq(safetyRules.id, ruleId));
   await db.insert(auditLogs).values({ actorType: "admin", actorId, action: "safety_rule.rollback", resourceType: "safety_rule", resourceId: ruleId, metadata: JSON.stringify({ version }) });
+}
+
+export async function createBlockedDomain(input: typeof blockedDomains.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(blockedDomains).values(input);
+  return Number(result[0].insertId);
+}
+
+export async function setBlockedDomainStatus(id: number, isActive: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(blockedDomains).set({ isActive }).where(eq(blockedDomains.id, id));
 }
 
 export async function listBlockedDomains() {
@@ -151,6 +171,12 @@ export async function createCommunity(input: typeof communities.$inferInsert) {
   if (!db) throw new Error("Database is not available");
   const result = await db.insert(communities).values(input);
   return Number(result[0].insertId);
+}
+
+export async function updateCommunity(id: number, input: Partial<Pick<typeof communities.$inferInsert, "name" | "description" | "eligibility" | "categoryType">>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(communities).set(input).where(eq(communities.id, id));
 }
 
 export async function setCommunityStatus(id: number, status: "coming_soon" | "active" | "archived") {
@@ -277,8 +303,64 @@ export async function listAuditLogs() {
   return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(50);
 }
 
+export async function updateProfileFieldPolicy(id: number, input: Partial<Pick<typeof profileFieldPolicies.$inferInsert, "freeAccess" | "basicAccess" | "advancedAccess" | "requiresOwnerConsent" | "isSensitive">>, updatedBy: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(profileFieldPolicies).set({ ...input, updatedBy }).where(eq(profileFieldPolicies.id, id));
+}
+
 export async function listProfileFieldPolicies() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(profileFieldPolicies).orderBy(profileFieldPolicies.fieldKey);
+}
+
+export async function getCommunityModeratorPreview(communityId: number, userId: number) {
+  const community = (await listCommunities()).find(item => item.id === communityId);
+  const moderators = await listCommunityModerators(communityId);
+  const currentlyAssigned = moderators.some(item => item.userId === userId);
+  const status = community?.status;
+  return {
+    communityId,
+    communityName: community?.name ?? null,
+    status: status ?? null,
+    currentlyAssigned,
+    before: getCommunityPermissions(status, currentlyAssigned),
+    afterAssignment: getCommunityPermissions(status, true),
+    assignedModeratorIds: moderators.map(item => item.userId),
+  };
+}
+
+export async function getSubscriptionEntitlementPreview(userId: number, requestedPlanCode: "free" | "basic" | "advanced", requestedEndsAt?: Date) {
+  const current = await getEffectiveSubscription(userId);
+  const isExpired = Boolean(requestedEndsAt && requestedEndsAt.getTime() <= Date.now());
+  const effectivePlan = isExpired ? "free" : requestedPlanCode;
+  const policies = await listProfileFieldPolicies();
+  const allowedFields = policies.filter(policy => effectivePlan === "free" ? policy.freeAccess : effectivePlan === "basic" ? policy.basicAccess : policy.advancedAccess).map(policy => policy.fieldKey);
+  return {
+    userId,
+    requestedPlan: requestedPlanCode,
+    effectivePlan,
+    requestedEndsAt: requestedEndsAt ?? null,
+    currentPlan: current?.planCode ?? "free",
+    currentEndsAt: current?.endsAt ?? null,
+    isExpired,
+    fallbackApplied: isExpired,
+    allowedFields,
+    allowedFieldCount: allowedFields.length,
+  } as const;
+}
+
+export async function updateBlockedDomain(id: number, input: { severity?: "low" | "medium" | "high" | "critical"; reason?: string }, updatedBy: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(blockedDomains).set({ ...input, updatedAt: new Date() }).where(eq(blockedDomains.id, id));
+  await createAuditLog({ actorType: "admin", actorId: updatedBy, action: "blocked_domain.update", resourceType: "blocked_domain", resourceId: id, metadata: JSON.stringify(input) });
+}
+
+export async function updateSubscriptionPlan(id: number, input: { name?: string; description?: string; isActive?: boolean }, updatedBy: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(subscriptionPlans).set({ ...input, updatedAt: new Date() }).where(eq(subscriptionPlans.id, id));
+  await createAuditLog({ actorType: "admin", actorId: updatedBy, action: "subscription_plan.update", resourceType: "subscription_plan", resourceId: id, metadata: JSON.stringify(input) });
 }
