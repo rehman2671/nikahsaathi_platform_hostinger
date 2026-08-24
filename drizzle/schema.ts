@@ -61,22 +61,6 @@ export const mediaAssets = mysqlTable("media_assets", {
   ownerPurposeIndex: index("media_assets_owner_purpose_status_idx").on(table.ownerUserId, table.purpose, table.status),
 }));
 
-export const verificationSubmissions = mysqlTable("verification_submissions", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull().references(() => users.id),
-  status: mysqlEnum("status", ["pending", "approved", "rejected", "resubmission_required"]).notNull().default("pending"),
-  provider: varchar("provider", { length: 120 }).notNull().default("manual"),
-  evidenceAssetId: int("evidenceAssetId").references(() => mediaAssets.id),
-  reviewCaseId: int("reviewCaseId"),
-  submittedAt: timestamp("submittedAt").defaultNow().notNull(),
-  reviewedAt: timestamp("reviewedAt"),
-  reviewedBy: int("reviewedBy").references(() => users.id),
-  reviewerNotes: text("reviewerNotes"),
-}, table => ({
-  userStatusIndex: index("verification_submissions_user_status_idx").on(table.userId, table.status, table.submittedAt),
-  pendingIndex: index("verification_submissions_status_submitted_idx").on(table.status, table.submittedAt),
-}));
-
 export const profiles = mysqlTable("profiles", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id),
@@ -203,7 +187,7 @@ export const safetyRules = mysqlTable("safety_rules", {
   action: mysqlEnum("action", ["allow", "warn", "mask", "replace", "block", "quarantine", "rate_limit", "create_case", "escalate_human"]).notNull().default("block"),
   version: int("version").notNull().default(1),
   isActive: boolean("isActive").notNull().default(false),
-  createdBy: int("createdBy"),
+  createdBy: int("createdBy").references(() => users.id),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -214,18 +198,18 @@ export const blockedDomains = mysqlTable("blocked_domains", {
   reason: text("reason"),
   severity: mysqlEnum("severity", ["low", "medium", "high", "critical"]).notNull().default("high"),
   isActive: boolean("isActive").notNull().default(true),
-  createdBy: int("createdBy"),
+  createdBy: int("createdBy").references(() => users.id),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export const safetyRuleVersions = mysqlTable("safety_rule_versions", {
   id: int("id").autoincrement().primaryKey(),
-  ruleId: int("ruleId").notNull(),
+  ruleId: int("ruleId").notNull().references(() => safetyRules.id),
   version: int("version").notNull(),
   pattern: text("pattern").notNull(),
   action: varchar("action", { length: 40 }).notNull(),
-  changedBy: int("changedBy"),
+  changedBy: int("changedBy").references(() => users.id),
   changeReason: text("changeReason"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -242,7 +226,7 @@ export const subscriptionPlans = mysqlTable("subscription_plans", {
 
 export const planEntitlements = mysqlTable("plan_entitlements", {
   id: int("id").autoincrement().primaryKey(),
-  planId: int("planId").notNull(),
+  planId: int("planId").notNull().references(() => subscriptionPlans.id),
   key: varchar("key", { length: 120 }).notNull(),
   value: varchar("value", { length: 255 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -252,13 +236,13 @@ export const planEntitlements = mysqlTable("plan_entitlements", {
 
 export const userSubscriptions = mysqlTable("user_subscriptions", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
-  planId: int("planId").notNull(),
+  userId: int("userId").notNull().references(() => users.id),
+  planId: int("planId").notNull().references(() => subscriptionPlans.id),
   status: mysqlEnum("status", ["active", "expired", "cancelled"]).notNull().default("active"),
   activeKey: varchar("activeKey", { length: 64 }).unique(),
   startsAt: timestamp("startsAt").defaultNow().notNull(),
   endsAt: timestamp("endsAt"),
-  changedBy: int("changedBy"),
+  changedBy: int("changedBy").references(() => users.id),
   changeReason: text("changeReason"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -274,7 +258,7 @@ export const profileFieldPolicies = mysqlTable("profile_field_policies", {
   advancedAccess: boolean("advancedAccess").notNull().default(false),
   requiresOwnerConsent: boolean("requiresOwnerConsent").notNull().default(true),
   isSensitive: boolean("isSensitive").notNull().default(false),
-  updatedBy: int("updatedBy"),
+  updatedBy: int("updatedBy").references(() => users.id),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
@@ -285,15 +269,15 @@ export const communities = mysqlTable("communities", {
   status: mysqlEnum("status", ["coming_soon", "active", "archived"]).notNull().default("coming_soon"),
   description: text("description"),
   eligibility: text("eligibility"),
-  createdBy: int("createdBy"),
+  createdBy: int("createdBy").references(() => users.id),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export const communityMemberships = mysqlTable("community_memberships", {
   id: int("id").autoincrement().primaryKey(),
-  communityId: int("communityId").notNull(),
-  userId: int("userId").notNull(),
+  communityId: int("communityId").notNull().references(() => communities.id),
+  userId: int("userId").notNull().references(() => users.id),
   status: mysqlEnum("status", ["active", "left", "restricted"]).notNull().default("active"),
   joinedAt: timestamp("joinedAt").defaultNow().notNull(),
   leftAt: timestamp("leftAt"),
@@ -304,9 +288,9 @@ export const communityMemberships = mysqlTable("community_memberships", {
 
 export const communityModerators = mysqlTable("community_moderators", {
   id: int("id").autoincrement().primaryKey(),
-  communityId: int("communityId").notNull(),
-  userId: int("userId").notNull(),
-  assignedBy: int("assignedBy"),
+  communityId: int("communityId").notNull().references(() => communities.id),
+  userId: int("userId").notNull().references(() => users.id),
+  assignedBy: int("assignedBy").references(() => users.id),
   isActive: boolean("isActive").notNull().default(true),
   assignedAt: timestamp("assignedAt").defaultNow().notNull(),
 }, table => ({
@@ -322,7 +306,7 @@ export const reviewCases = mysqlTable("review_cases", {
   subjectType: varchar("subjectType", { length: 40 }),
   subjectId: int("subjectId"),
   summary: text("summary").notNull(),
-  assignedTo: int("assignedTo"),
+  assignedTo: int("assignedTo").references(() => users.id),
   source: varchar("source", { length: 40 }).notNull().default("system"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -330,9 +314,25 @@ export const reviewCases = mysqlTable("review_cases", {
   queueIndex: index("review_cases_type_status_severity_idx").on(table.caseType, table.status, table.severity, table.updatedAt),
 }));
 
+export const verificationSubmissions = mysqlTable("verification_submissions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id),
+  status: mysqlEnum("status", ["pending", "approved", "rejected", "resubmission_required"]).notNull().default("pending"),
+  provider: varchar("provider", { length: 120 }).notNull().default("manual"),
+  evidenceAssetId: int("evidenceAssetId").references(() => mediaAssets.id),
+  reviewCaseId: int("reviewCaseId").references(() => reviewCases.id),
+  submittedAt: timestamp("submittedAt").defaultNow().notNull(),
+  reviewedAt: timestamp("reviewedAt"),
+  reviewedBy: int("reviewedBy").references(() => users.id),
+  reviewerNotes: text("reviewerNotes"),
+}, table => ({
+  userStatusIndex: index("verification_submissions_user_status_idx").on(table.userId, table.status, table.submittedAt),
+  pendingIndex: index("verification_submissions_status_submitted_idx").on(table.status, table.submittedAt),
+}));
+
 export const reviewCaseEvidence = mysqlTable("review_case_evidence", {
   id: int("id").autoincrement().primaryKey(),
-  caseId: int("caseId").notNull(),
+  caseId: int("caseId").notNull().references(() => reviewCases.id),
   evidenceType: varchar("evidenceType", { length: 60 }).notNull(),
   evidenceReference: varchar("evidenceReference", { length: 1000 }).notNull(),
   source: varchar("source", { length: 80 }).notNull().default("operations"),
@@ -343,8 +343,8 @@ export const reviewCaseEvidence = mysqlTable("review_case_evidence", {
 
 export const humanReviews = mysqlTable("human_reviews", {
   id: int("id").autoincrement().primaryKey(),
-  caseId: int("caseId").notNull(),
-  reviewerId: int("reviewerId"),
+  caseId: int("caseId").notNull().references(() => reviewCases.id),
+  reviewerId: int("reviewerId").references(() => users.id),
   decision: varchar("decision", { length: 60 }),
   reasonCode: varchar("reasonCode", { length: 80 }),
   notes: text("notes"),
@@ -353,7 +353,7 @@ export const humanReviews = mysqlTable("human_reviews", {
 
 export const verificationReviewDetails = mysqlTable("verification_review_details", {
   id: int("id").autoincrement().primaryKey(),
-  caseId: int("caseId").notNull().unique(),
+  caseId: int("caseId").notNull().unique().references(() => reviewCases.id),
   resubmissionReason: text("resubmissionReason"),
   fallbackProvider: varchar("fallbackProvider", { length: 120 }),
   fallbackOutcome: text("fallbackOutcome"),
@@ -370,7 +370,7 @@ export const supportTickets = mysqlTable("support_tickets", {
   summary: text("summary").notNull(),
   slaDueAt: timestamp("slaDueAt"),
   escalationReason: varchar("escalationReason", { length: 200 }),
-  assignedTo: int("assignedTo"),
+  assignedTo: int("assignedTo").references(() => users.id),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -380,7 +380,7 @@ export const incidentRecords = mysqlTable("incident_records", {
   incidentType: varchar("incidentType", { length: 80 }).notNull(),
   severity: mysqlEnum("severity", ["low", "medium", "high", "critical"]).notNull().default("high"),
   status: mysqlEnum("status", ["open", "contained", "resolved", "postmortem"]).notNull().default("open"),
-  ownerId: int("ownerId"),
+  ownerId: int("ownerId").references(() => users.id),
   isFrozen: boolean("isFrozen").notNull().default(false),
   evidenceReference: text("evidenceReference"),
   escalationReason: varchar("escalationReason", { length: 200 }),
@@ -392,7 +392,7 @@ export const incidentRecords = mysqlTable("incident_records", {
 export const agentDecisions = mysqlTable("agent_decisions", {
   id: int("id").autoincrement().primaryKey(),
   agentType: varchar("agentType", { length: 80 }).notNull(),
-  caseId: int("caseId"),
+  caseId: int("caseId").references(() => reviewCases.id),
   recommendation: varchar("recommendation", { length: 80 }).notNull(),
   confidence: varchar("confidence", { length: 20 }).notNull(),
   modelVersion: varchar("modelVersion", { length: 80 }),
@@ -416,7 +416,7 @@ export const telegramUpdateReceipts = mysqlTable("telegram_update_receipts", {
 export const auditLogs = mysqlTable("audit_logs", {
   id: int("id").autoincrement().primaryKey(),
   actorType: varchar("actorType", { length: 40 }).notNull(),
-  actorId: int("actorId"),
+  actorId: int("actorId").references(() => users.id),
   action: varchar("action", { length: 120 }).notNull(),
   resourceType: varchar("resourceType", { length: 80 }).notNull(),
   resourceId: int("resourceId"),

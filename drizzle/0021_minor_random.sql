@@ -1,0 +1,1 @@
+ALTER TABLE `verification_submissions` ADD CONSTRAINT `verification_submissions_reviewCaseId_review_cases_id_fk` FOREIGN KEY (`reviewCaseId`) REFERENCES `review_cases`(`id`) ON DELETE no action ON UPDATE no action;
