@@ -56,7 +56,9 @@ import {
   changeUserSubscription,
   createMediaAsset,
   createPost,
+  createPostWithAudit,
   createComment,
+  createCommentWithAudit,
   getPost,
   listCommunityPosts,
   listPostComments,
@@ -68,8 +70,9 @@ import {
   removeCommunityModerator,
   setSafetyRuleStatus,
   updateProfileFieldPolicy,
-  getUserProfile,
   upsertUserProfile,
+  upsertUserProfileWithAudit,
+  getUserProfile,
   listUserInterests,
   replaceUserInterests,
   listDiscoverableProfiles,
@@ -246,8 +249,7 @@ export const appRouter = router({
       const blockedUrls = findBlockedDomains(input.body, domains.filter(domain => domain.isActive).map(domain => domain.domain));
       const decision = applySafetyDecision(input.body, matches, blockedUrls);
       if (!decision.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: decision.explanation ?? "This post cannot be shared" });
-      const postId = await createPost({ authorId: ctx.user.id, communityId: input.communityId, body: decision.safeText ?? input.body, status: "published" });
-      await createAuditLog({ actorType: "user", actorId: ctx.user.id, action: "post.create", resourceType: "post", resourceId: postId, metadata: JSON.stringify({ communityId: input.communityId, safetyAction: decision.action }) });
+      const postId = await createPostWithAudit({ authorId: ctx.user.id, communityId: input.communityId, body: decision.safeText ?? input.body, status: "published" }, { actorType: "user", actorId: ctx.user.id, action: "post.create", resourceType: "post", metadata: JSON.stringify({ communityId: input.communityId, safetyAction: decision.action }) });
       return { postId, safety: { action: decision.action, maskedText: decision.safeText, highestRisk: matches[0]?.severity ?? (blockedUrls.length ? "high" : "low") } };
     }),
     createComment: protectedProcedure.input(contentInput.extend({ postId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
@@ -259,14 +261,14 @@ export const appRouter = router({
       const blockedUrls = findBlockedDomains(input.body, domains.filter(domain => domain.isActive).map(domain => domain.domain));
       const decision = applySafetyDecision(input.body, matches, blockedUrls);
       if (!decision.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: decision.explanation ?? "This comment cannot be shared" });
-      const commentId = await createComment({ postId: input.postId, authorId: ctx.user.id, body: decision.safeText ?? input.body, status: "published" });
-      await createAuditLog({ actorType: "user", actorId: ctx.user.id, action: "comment.create", resourceType: "comment", resourceId: commentId, metadata: JSON.stringify({ postId: input.postId, safetyAction: decision.action }) });
+      const commentId = await createCommentWithAudit({ postId: input.postId, authorId: ctx.user.id, body: decision.safeText ?? input.body, status: "published" }, { actorType: "user", actorId: ctx.user.id, action: "comment.create", resourceType: "comment", metadata: JSON.stringify({ postId: input.postId, safetyAction: decision.action }) });
       return { commentId, safety: { action: decision.action, maskedText: decision.safeText, highestRisk: matches[0]?.severity ?? (blockedUrls.length ? "high" : "low") } };
     }),
     upsertMyProfile: protectedProcedure.input(profileInput).mutation(async ({ input, ctx }) => {
       const [rules, domains] = await Promise.all([listSafetyRules(), listBlockedDomains()]);
       const textFields = ["displayName", "introduction", "religion", "country", "city", "profession", "education", "languages", "marriageExpectations"] as const;
       const safeValues: Record<string, unknown> = {};
+      const safetyAudits: Array<{ actorType: "user"; actorId: number; action: string; resourceType: string; metadata: string }> = [];
       for (const field of textFields) {
         const value = input[field];
         if (value === undefined) continue;
@@ -275,12 +277,12 @@ export const appRouter = router({
         const decision = applySafetyDecision(value, matches, blockedUrls);
         if (!decision.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: decision.explanation ?? "This profile content cannot be shared" });
         safeValues[field] = decision.safeText ?? value;
-        if (decision.action !== "allow") await createAuditLog({ actorType: "user", actorId: ctx.user.id, action: "profile.content_sanitized", resourceType: "profile", metadata: JSON.stringify({ field, action: decision.action }) });
+        if (decision.action !== "allow") safetyAudits.push({ actorType: "user", actorId: ctx.user.id, action: "profile.content_sanitized", resourceType: "profile", metadata: JSON.stringify({ field, action: decision.action }) });
       }
       if (input.ownerConsent) safeValues.ownerConsent = JSON.stringify(input.ownerConsent);
       if (input.ownerPrivacy) safeValues.ownerPrivacy = JSON.stringify(input.ownerPrivacy);
       if (input.profileStatus) safeValues.profileStatus = input.profileStatus;
-      const profileId = await upsertUserProfile(ctx.user.id, safeValues);
+      const profileId = await upsertUserProfileWithAudit(ctx.user.id, safeValues, safetyAudits);
       return { profileId, profile: await getUserProfile(ctx.user.id) };
     }),
     auditLogs: adminProcedure.query(() => listAuditLogs()),

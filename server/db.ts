@@ -701,6 +701,24 @@ export async function upsertUserProfile(userId: number, input: Partial<typeof pr
 }
 
 
+export async function upsertUserProfileWithAudit(userId: number, input: Partial<typeof profiles.$inferInsert>, audits: Array<Omit<typeof auditLogs.$inferInsert, "resourceId">>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  return db.transaction(async tx => {
+    const existing = await tx.select({ id: profiles.id }).from(profiles).where(eq(profiles.userId, userId)).limit(1);
+    let profileId: number;
+    if (existing[0]) {
+      const result = await tx.update(profiles).set(input).where(eq(profiles.id, existing[0].id));
+      assertMutationChanged(result, "Profile");
+      profileId = existing[0].id;
+    } else {
+      const result = await tx.insert(profiles).values({ userId, ...input });
+      profileId = Number(result[0].insertId);
+    }
+    if (audits.length > 0) await tx.insert(auditLogs).values(audits.map(audit => ({ ...audit, resourceId: profileId })));
+    return profileId;
+  });
+}
 export async function getActiveMediaAssetByKey(storageKey: string) {
   const db = await getDb();
   if (!db) return undefined;
@@ -724,6 +742,16 @@ export async function createPost(input: typeof posts.$inferInsert) {
   return Number(result[0].insertId);
 }
 
+export async function createPostWithAudit(input: typeof posts.$inferInsert, audit: Omit<typeof auditLogs.$inferInsert, "resourceId">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  return db.transaction(async tx => {
+    const result = await tx.insert(posts).values(input);
+    const postId = Number(result[0].insertId);
+    await tx.insert(auditLogs).values({ ...audit, resourceId: postId });
+    return postId;
+  });
+}
 export async function listCommunityPosts(communityId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -747,6 +775,19 @@ export async function createComment(input: typeof comments.$inferInsert) {
   return Number(result[0].insertId);
 }
 
+export async function createCommentWithAudit(input: typeof comments.$inferInsert, audit: Omit<typeof auditLogs.$inferInsert, "resourceId">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  return db.transaction(async tx => {
+    const post = await tx.select({ id: posts.id, status: posts.status }).from(posts).where(eq(posts.id, input.postId)).limit(1);
+    if (!post[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Post not found" });
+    if (post[0].status !== "published") throw new TRPCError({ code: "FORBIDDEN", message: "Comments are unavailable on this post" });
+    const result = await tx.insert(comments).values(input);
+    const commentId = Number(result[0].insertId);
+    await tx.insert(auditLogs).values({ ...audit, resourceId: commentId });
+    return commentId;
+  });
+}
 export async function listPostComments(postId: number) {
   const db = await getDb();
   if (!db) return [];
