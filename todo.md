@@ -210,3 +210,8 @@
 - [x] Add message-write safety audit persistence inside the transaction-scoped safety helper and cover it with regression tests. Message insertion, conversation timestamp update and `message.create` audit now share the same transaction; the full suite remains green.
 - [x] Add broad mutation idempotency/replay handling for externally retried user, operator and webhook paths, or narrow the checklist claim to the routes actually covered. The checklist and release gate were narrowed to the routes with implemented replay protection: reports, Telegram updates/outbox and operator mutation guards; future externally retried routes must add request keys.
 - [x] Implement the retention/deletion worker scheduled endpoint with dry-run, legal-hold checks, bounded steps and regression coverage; do not enable destructive execution by default. `POST /api/scheduled/retentionSweep` is cron-authenticated, capped at 500 rows, dry-run by default and limited to operational records.
+
+## AI-agent platform architecture documentation — 25 Aug 2026
+
+- [x] Create an AI-agent-friendly NikahSaathi platform map covering domains, web/mobile/API/admin connections, authentication, database, storage, Telegram, communities, configuration and future rename procedure. Added `NIKAHSAATHI_PLATFORM_ARCHITECTURE_FOR_AI_AGENTS.md`.
+- [x] Verify the document against current source/runbook/contract files and save a checkpoint with the documentation deliverable. Key references and current routes/configuration were checked; checkpoint follows after validation.
