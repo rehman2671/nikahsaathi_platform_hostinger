@@ -10,9 +10,7 @@ describe("Telegram webhook secret", () => {
   it("is accepted by the local webhook health boundary", async () => {
     const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
     expect(secret, "TELEGRAM_WEBHOOK_SECRET must be configured").toBeTruthy();
-    const response = await fetch("http://127.0.0.1:3000/api/telegram/health", {
-      headers: { "x-telegram-bot-api-secret-token": secret! },
-    });
+    const response = await fetch("http://127.0.0.1:3000/api/telegram/health", { headers: { "x-telegram-bot-api-secret-token": secret! } });
     expect(response.status).toBe(200);
     const payload = (await response.json()) as { ok?: boolean };
     expect(payload.ok).toBe(true);
@@ -20,7 +18,7 @@ describe("Telegram webhook secret", () => {
 
   it("persists a signed /action update as an agent-review handoff", async () => {
     const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-    const operatorId = (process.env.TELEGRAM_OPERATOR_IDS ?? '').split(',')[0]?.trim();
+    const operatorId = (process.env.TELEGRAM_OPERATOR_IDS ?? "").split(",")[0]?.trim();
     expect(secret).toBeTruthy();
     expect(operatorId).toBeTruthy();
     const response = await fetch("http://127.0.0.1:3000/api/telegram/webhook", { method: "POST", headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": secret!, "x-telegram-test-mode": "true" }, body: JSON.stringify({ update_id: Date.now(), message: { text: "/action permanent_ban 7", chat: { id: 1 }, from: { id: Number(operatorId) } } }) });
@@ -39,5 +37,12 @@ describe("Telegram webhook secret", () => {
     expect(response.status).toBe(200);
     const payload = (await response.json()) as { ignored?: boolean };
     expect(payload.ignored).toBe(true);
+  }, 15_000);
+
+  it("rejects payloads over the dedicated webhook body limit", async () => {
+    const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    expect(secret).toBeTruthy();
+    const response = await fetch("http://127.0.0.1:3000/api/telegram/webhook", { method: "POST", headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": secret! }, body: JSON.stringify({ update_id: 9003, message: { text: "x".repeat(70_000), chat: { id: 1 }, from: { id: 999 } } }) });
+    expect(response.status).toBe(413);
   }, 15_000);
 });

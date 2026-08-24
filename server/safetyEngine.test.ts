@@ -35,4 +35,10 @@ describe("safety engine", () => {
     const matches = evaluateSafetyRules("Contact +91 987-654-3210 today", "messages", [{ ...rules[0], action: "mask" as const }]);
     expect(applySafetyDecision("Contact +91 987-654-3210 today", matches)).toMatchObject({ allowed: true, safeText: "Contact [hidden] today" });
   });
+
+  it("rejects oversized and nested-quantifier regex patterns", () => {
+    const oversized = { ...rules[2], pattern: "x".repeat(501) };
+    const nested = { ...rules[2], pattern: "(a+)+$" };
+    expect(evaluateSafetyRules("a".repeat(100), "posts", [oversized, nested])).toEqual([]);
+  });
 });

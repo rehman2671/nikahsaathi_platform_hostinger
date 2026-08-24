@@ -146,15 +146,15 @@
 - [x] P0-02: Seed/version baseline safety rules and plan entitlements; add readiness validation for missing mandatory policy data. Idempotent bootstrap now creates baseline rule versions and readiness verifies exact baseline keys/rules.
 - [ ] P0-03: Add server-authoritative post/comment/message/profile write procedures invoking safety decisions transactionally. Server procedures now cover posts, comments, messages and profiles with safety evaluation before persistence; a shared DB transaction boundary for safety decision/audit/content write remains a hardening follow-up.
 - [x] P0-04: Add authenticated, ownership-aware storage metadata and signed URL authorization for private/restricted media. Active media metadata, ownership checks and restricted-admin access are implemented.
-- [ ] P0-05: Add split-origin CORS, credential policy, CSRF/origin protection and deployment integration tests. Explicit-origin CORS, credential headers, origin checks and double-submit CSRF protection are implemented with unit coverage; deployment-level integration validation remains pending.
+- [ ] P0-05: Add split-origin CORS, credential policy, CSRF/origin protection and deployment integration tests. Explicit-origin CORS, credential headers, origin checks and double-submit CSRF protection are implemented; live tests now cover rejection and valid-CSRF cookie-authenticated mutation acceptance on the local allowed origin. Non-host split-origin deployment validation remains pending.
 - [x] P0-06: Reconcile TypeScript/Dart safety response contracts, including risk and masking fields. Server, TypeScript and Dart safety payload fields are aligned.
 - [x] P1-01: Enforce typed community eligibility, verification and membership rules server-side. Join and availability now evaluate active status, optional verified requirement, and normalized religion/country requirements; Coming Soon remains read-only.
 - [x] P1-02: Make subscription changes transactional and enforce one active entitlement per user. Transactions and a unique active subscription key are implemented.
 - [ ] P1-03: Add foreign keys, composite unique constraints and lifecycle indexes. Product-domain foreign keys and indexes are applied in migrations 0013/0014/0015/0016; remaining operational-table foreign keys and full-model review remain pending.
-- [ ] P1-04: Make mutations return NOT_FOUND on stale IDs and audit only successful transitions. Affected-row guards now cover core safety, community, review, support, incident, profile and policy updates; router error mapping remains pending.
+- [x] P1-04: Make mutations return NOT_FOUND on stale IDs and audit only successful transitions. Shared `assertMutationChanged` guards throw typed tRPC `NOT_FOUND` errors for zero-row transitions across core mutation helpers; audit writes remain after successful mutations, and the tRPC router preserves the typed mapping.
 - [ ] P1-05: Add Telegram receipt states, retries/dead-letter handling and atomic handoff/outbox behavior. Receipt status/attempts/error/next-attempt fields, bounded retry up to five attempts and dead-letter transitions are implemented; an atomic outbox for external Telegram replies remains pending.
 - [ ] P1-06: Add rate limits, quotas and mutation idempotency for user, operator and webhook paths. Global tRPC and local report/review mutation throttles exist; distributed quotas and idempotency keys remain pending.
-- [ ] P1-07: Fix safety source-span masking, rule-specific normalization and regex resource limits. Original-text source-span masking, phone/personal-data-specific normalization and a 500-character regex guard are implemented with regression coverage; execution-time regex resource limits remain pending.
+- [x] P1-07: Fix safety source-span masking, rule-specific normalization and regex resource limits. Original-text source-span masking, phone/personal-data-specific normalization, maximum pattern length, back-reference rejection and nested-quantifier guards are implemented with regression coverage; unsafe patterns fail closed before compilation.
 - [x] P1-08: Unify high-risk confirmation token across runtime, UI, Telegram and shared contracts. Runtime now reuses the shared CONFIRM validator.
 - [x] P1-09: Add startup env validation and safe readiness checks. Production startup now fails fast for required configuration and readiness verifies policy dependencies.
 - [x] P1-10: Reduce global body limits and apply route-specific webhook limits. API body defaults are reduced to 1 MB JSON/256 KB form payloads; Telegram uses the reduced boundary.
@@ -171,7 +171,7 @@
 - [x] Add accepted-match-gated hidden/profile-visible messaging with safety-gated writes and participant authorization.
 - [x] Add typed community eligibility evaluation and align available-community `canJoin` with server rules.
 - [x] Add split-origin CORS/CSRF middleware and focused HTTP-security regression coverage.
-- [ ] Add integration-level HTTP tests for CORS preflight, CSRF rejection/acceptance and authenticated tRPC mutations.
+- [x] Add integration-level HTTP tests for CORS preflight, CSRF rejection/acceptance and authenticated tRPC mutations. Live tests cover preflight, untrusted-origin rejection, missing-token rejection and a successful cookie-authenticated tRPC mutation with matching CSRF cookie/header.
 
 ## Audit follow-up: policy bootstrap correctness
 
@@ -183,10 +183,10 @@
 
 ## Audit follow-up: invariant and webhook parser correctness
 
-- [ ] Clear the prior subscription active lock key during transactional expiry and cover repeated active reassignment.
-- [ ] Add a dedicated small Telegram webhook body parser and oversized payload regression coverage.
+- [x] Clear the prior subscription active lock key during transactional expiry and cover repeated active reassignment. `changeUserSubscription` expires every prior active row and explicitly clears `activeKey` before inserting the replacement within one transaction; the active-key uniqueness constraint prevents duplicate active assignments.
+- [x] Add a dedicated small Telegram webhook body parser and oversized payload regression coverage. The webhook uses a dedicated 64 KB JSON parser and the oversized-payload test returns HTTP 413.
 
-- [ ] Enforce current application binding on verified session JWTs and add cross-app token regression coverage.
+- [x] Enforce current application binding on verified session JWTs and add cross-app token regression coverage. `verifySession` rejects a validly signed token whose `appId` differs from the configured application, covered by `server/auth.binding.test.ts`.
 
 - [ ] Restrict arbitrary human-review case creation to internal agent/operator paths and rate-limit review queue creation. Public case creation is now admin-only and agent persistence remains the internal creation path; rate limiting/idempotency remains pending.
 - [x] Make human review record plus review-case transition atomic and reject orphaned review records. Review recording now runs in one transaction, validates the case first and rejects missing targets.

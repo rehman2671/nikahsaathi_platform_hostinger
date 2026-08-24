@@ -41,7 +41,7 @@ function ruleApplies(rule: SafetyRuleDefinition, surface: ContentSurface) {
 }
 
 function safePattern(pattern: string) {
-  if (pattern.length > 500) return null;
+  if (pattern.length > 500 || /\\[1-9]/.test(pattern) || /(?:\([^)]*[+*][^)]*\))[+*]/.test(pattern) || /(?:\.\*|\.\+|\(\?:\.\*\))[+*]/.test(pattern)) return null;
   try {
     return new RegExp(pattern, "iu");
   } catch {
