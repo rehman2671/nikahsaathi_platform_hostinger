@@ -38,6 +38,9 @@ describe("operations authorization", () => {
     ["changeUserSubscription", () => appRouter.createCaller(contextForRole("user")).operations.changeUserSubscription({ userId: 2, planCode: "basic", status: "active", changeReason: "test", confirmation: "CONFIRM" })],
     ["updateProfileFieldPolicy", () => appRouter.createCaller(contextForRole("user")).operations.updateProfileFieldPolicy({ id: 1, freeAccess: true })],
     ["authorizeHighRiskAction", () => appRouter.createCaller(contextForRole("user")).operations.authorizeHighRiskAction({ action: "permanent_ban", confidence: 0.4, humanDecision: "reject", secondConfirmation: "CONFIRM" })],
+    ["verificationAction", () => appRouter.createCaller(contextForRole("user")).operations.verificationAction({ caseId: 1, action: "appeal", reason: "member appeal" })],
+    ["preserveIncidentEvidence", () => appRouter.createCaller(contextForRole("user")).operations.preserveIncidentEvidence({ id: 1, evidenceReference: "secure-ref" })],
+    ["escalateIncident", () => appRouter.createCaller(contextForRole("user")).operations.escalateIncident({ id: 1, reason: "critical escalation" })],
   ])("rejects regular users from %s", async (_name, request) => {
     await expect(request()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
@@ -56,5 +59,13 @@ describe("admin mutation input validation", () => {
 
   it("requires explicit confirmation for plan administration", async () => {
     await expect(admin().operations.updateSubscriptionPlan({ id: 1, name: "Basic", confirmation: "NOPE" as "CONFIRM" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("requires fallback provider details for verification fallback", async () => {
+    await expect(admin().operations.verificationAction({ caseId: 1, action: "fallback_provider", reason: "secondary review" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("requires appeal notes for verification appeals", async () => {
+    await expect(admin().operations.verificationAction({ caseId: 1, action: "appeal", reason: "appeal opened" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });

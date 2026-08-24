@@ -7,6 +7,21 @@ class NikahSaathiApiException implements Exception {
   final String code;
   final String message;
 
+  ApiErrorCode get typedCode {
+    switch (code.toUpperCase()) {
+      case 'UNAUTHORIZED':
+        return ApiErrorCode.unauthorized;
+      case 'FORBIDDEN':
+        return ApiErrorCode.forbidden;
+      case 'BAD_REQUEST':
+        return ApiErrorCode.badRequest;
+      case 'NOT_FOUND':
+        return ApiErrorCode.notFound;
+      default:
+        return ApiErrorCode.requestFailed;
+    }
+  }
+
   @override
   String toString() => 'NikahSaathiApiException($code): $message';
 }
@@ -24,7 +39,7 @@ class NikahSaathiApiClient {
       final body = await _call('auth.me', {});
       return AuthSession.fromJson(body['user'] is Map ? Map<String, dynamic>.from(body['user'] as Map) : body);
     } on NikahSaathiApiException catch (error) {
-      if (error.code == 'UNAUTHORIZED' || error.code == 'FORBIDDEN') return const AuthSession(isAuthenticated: false);
+      if (error.typedCode == ApiErrorCode.unauthorized || error.typedCode == ApiErrorCode.forbidden) return const AuthSession(isAuthenticated: false);
       rethrow;
     }
   }
@@ -60,7 +75,8 @@ class NikahSaathiApiClient {
     final payload = data is Map && data.containsKey('json') ? data['json'] : data;
     if (response.statusCode >= 400 || payload is! Map<String, dynamic>) {
       final error = envelope['error'];
-      final rawCode = error is Map ? error['data']?['code'] as String? ?? 'REQUEST_FAILED' : 'REQUEST_FAILED';
+      final errorData = error is Map ? error['data'] : null;
+      final rawCode = errorData is Map ? errorData['code'] as String? ?? 'REQUEST_FAILED' : 'REQUEST_FAILED';
       throw NikahSaathiApiException(rawCode, error is Map ? error['message'] as String? ?? 'Request failed' : 'Request failed');
     }
     return payload;

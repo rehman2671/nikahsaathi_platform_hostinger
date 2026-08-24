@@ -60,6 +60,13 @@ export function buildTelegramCommandResponse(command: TelegramCommand) {
   return `Action ${command.action} requested for Case #${command.caseId}. Open the admin console to review and confirm; no high-risk action executes in Telegram.`;
 }
 
+export function verifyTelegramWebhookSecret(received: string, expected: string) {
+  if (!received || !expected) return false;
+  const receivedBuffer = Buffer.from(received, "utf8");
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  return receivedBuffer.length === expectedBuffer.length && timingSafeEqual(receivedBuffer, expectedBuffer);
+}
+
 export function telegramIntegrationStatus() {
   return { configured: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_OPERATOR_IDS), operatorCount: configuredOperatorIds().size };
 }

@@ -95,3 +95,17 @@ The Telegram adapter now includes allowlisted operator command parsing for `/hel
 The Flutter foundation now includes `AuthSession`, `ApiErrorCode`, login URI construction, optional session-cookie forwarding, unauthenticated-session mapping, safety evaluation, profile projection and community-summary transport. The sandbox has no Flutter or Dart SDK, so `flutter pub get` and `flutter analyze` remain release gates rather than claimed validation.
 
 Validation evidence for this continuation: `pnpm check` passed; `pnpm test` passed with 11 files and 40 tests, including live Telegram credential validation; the operations schema migration applied successfully. Remaining implementation work before the next major checkpoint is explicit in `todo.md`: dedicated review/support/incident detail views, verification-specific resubmission/fallback/appeal controls, replay-protected Telegram webhook delivery, and Flutter SDK compilation.
+
+### Correctness remediation — operations detail workflows and client validation
+The review workspace now exposes redacted case detail for moderation, verification and agent-review queues. Verification cases have dedicated persisted workflow details for resubmission reasons, fallback-provider selection/outcome and appeal notes, with action-specific backend validation and audited status transitions. Support tickets now accept a dedicated owner and future SLA due time from creation and detail controls. Incidents now support explicit audited evidence-preservation and escalation actions, including freeze/containment behavior.
+
+The Telegram bridge now registers a secret-verified `/api/telegram/webhook` boundary, claims update IDs through the durable unique `telegram_update_receipts` table, and persists `/action` requests as critical `agent_review` handoffs before replying. The corresponding migration is `drizzle/0005_burly_xorn.sql`; the verification-detail migration is `drizzle/0006_common_ken_ellis.sql`. Webhook tests cover unauthorized POST rejection and signed harmless updates.
+
+Flutter validation is no longer blocked by SDK availability: Flutter 3.47.1/Dart 3.13.1 was installed in the sandbox, `flutter pub get`, `flutter test` (3 tests), and `flutter analyze` all passed. The client maps server error codes to `ApiErrorCode` and tests auth fallback, cookie forwarding and OAuth route construction.
+
+Validation evidence: `pnpm check` passed; focused authorization/webhook tests passed with 19 tests; Flutter package tests and analysis passed. A final full-suite/build run and responsive screenshot capture remain the final delivery gate.
+
+### Final correctness validation
+The operations console now includes record-level review details, verification-specific persisted workflow fields/actions, dedicated support owner/SLA controls, explicit incident evidence-preservation and escalation actions, and a Telegram `/action` path that persists an `agent_review` handoff before sending a redacted response. Flutter client validation is complete with typed API errors, session fallback, cookie forwarding tests, `flutter test` passing 3 tests, and `flutter analyze` reporting no issues.
+
+Final validation evidence: `pnpm check` passed; `pnpm test` passed with 12 files and 48 tests; `pnpm build` passed; Flutter `pub get`, `test`, and `analyze` passed; desktop and 390px mobile responsive screenshots were captured successfully. The next checkpoint includes migrations `0005_burly_xorn.sql` and `0006_common_ken_ellis.sql` plus the replay-protected webhook boundary and verification detail model.

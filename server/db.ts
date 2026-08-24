@@ -10,12 +10,15 @@ import {
   humanReviews,
   profileFieldPolicies,
   reviewCases,
+  reviewCaseEvidence,
   supportTickets,
   incidentRecords,
+  telegramUpdateReceipts,
   safetyRuleVersions,
   safetyRules,
   subscriptionPlans,
   userSubscriptions,
+  verificationReviewDetails,
   InsertUser,
   users,
 } from "../drizzle/schema";
@@ -267,6 +270,38 @@ export async function createReviewCase(input: typeof reviewCases.$inferInsert) {
   return Number(result[0].insertId);
 }
 
+export async function listReviewCaseEvidence(caseId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(reviewCaseEvidence).where(eq(reviewCaseEvidence.caseId, caseId));
+}
+
+export async function addReviewCaseEvidence(input: typeof reviewCaseEvidence.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(reviewCaseEvidence).values(input);
+  return Number(result[0].insertId);
+}
+
+export async function getVerificationDetail(caseId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(verificationReviewDetails).where(eq(verificationReviewDetails.caseId, caseId)).limit(1);
+  return rows[0];
+}
+
+export async function upsertVerificationDetail(input: typeof verificationReviewDetails.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const existing = await db.select().from(verificationReviewDetails).where(eq(verificationReviewDetails.caseId, input.caseId)).limit(1);
+  if (existing[0]) {
+    await db.update(verificationReviewDetails).set({ resubmissionReason: input.resubmissionReason, fallbackProvider: input.fallbackProvider, fallbackOutcome: input.fallbackOutcome, appealNotes: input.appealNotes }).where(eq(verificationReviewDetails.id, existing[0].id));
+    return existing[0].id;
+  }
+  const result = await db.insert(verificationReviewDetails).values(input);
+  return Number(result[0].insertId);
+}
+
 export async function updateReviewCase(id: number, input: Partial<Pick<typeof reviewCases.$inferInsert, "status" | "assignedTo" | "severity" | "summary">>) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
@@ -292,6 +327,18 @@ export async function createIncidentRecord(input: typeof incidentRecords.$inferI
   if (!db) throw new Error("Database is not available");
   const result = await db.insert(incidentRecords).values(input);
   return Number(result[0].insertId);
+}
+
+export async function claimTelegramUpdate(input: typeof telegramUpdateReceipts.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  try {
+    await db.insert(telegramUpdateReceipts).values(input);
+    return true;
+  } catch (error) {
+    if (String(error).toLowerCase().includes("duplicate") || String(error).toLowerCase().includes("unique")) return false;
+    throw error;
+  }
 }
 
 export async function createAgentDecision(input: typeof agentDecisions.$inferInsert) {

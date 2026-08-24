@@ -145,6 +145,17 @@ export const reviewCases = mysqlTable("review_cases", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const reviewCaseEvidence = mysqlTable("review_case_evidence", {
+  id: int("id").autoincrement().primaryKey(),
+  caseId: int("caseId").notNull(),
+  evidenceType: varchar("evidenceType", { length: 60 }).notNull(),
+  evidenceReference: varchar("evidenceReference", { length: 1000 }).notNull(),
+  source: varchar("source", { length: 80 }).notNull().default("operations"),
+  redactionState: mysqlEnum("redactionState", ["redacted", "restricted"]).notNull().default("redacted"),
+  capturedAt: timestamp("capturedAt").defaultNow().notNull(),
+  addedBy: int("addedBy"),
+});
+
 export const humanReviews = mysqlTable("human_reviews", {
   id: int("id").autoincrement().primaryKey(),
   caseId: int("caseId").notNull(),
@@ -153,6 +164,17 @@ export const humanReviews = mysqlTable("human_reviews", {
   reasonCode: varchar("reasonCode", { length: 80 }),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const verificationReviewDetails = mysqlTable("verification_review_details", {
+  id: int("id").autoincrement().primaryKey(),
+  caseId: int("caseId").notNull().unique(),
+  resubmissionReason: text("resubmissionReason"),
+  fallbackProvider: varchar("fallbackProvider", { length: 120 }),
+  fallbackOutcome: text("fallbackOutcome"),
+  appealNotes: text("appealNotes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export const supportTickets = mysqlTable("support_tickets", {
@@ -192,6 +214,14 @@ export const agentDecisions = mysqlTable("agent_decisions", {
   requiresHuman: boolean("requiresHuman").notNull().default(true),
   persistedToReview: boolean("persistedToReview").notNull().default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const telegramUpdateReceipts = mysqlTable("telegram_update_receipts", {
+  id: int("id").autoincrement().primaryKey(),
+  updateId: varchar("updateId", { length: 64 }).notNull().unique(),
+  operatorId: varchar("operatorId", { length: 64 }).notNull(),
+  command: varchar("command", { length: 160 }).notNull(),
+  processedAt: timestamp("processedAt").defaultNow().notNull(),
 });
 
 export const auditLogs = mysqlTable("audit_logs", {

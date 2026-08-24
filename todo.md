@@ -94,34 +94,48 @@
 
 ## Remaining roadmap: service operations, Telegram and Flutter
 
-- [ ] Add live moderation-case detail, assignment, decision and escalation workflows. Assignment/escalation/resolve mutations exist; dedicated detail/evidence view remains pending.
-- [ ] Add verification desk workflow for manual review, resubmission, fallback provider and appeals. Generic human review exists; verification-specific actions remain pending.
-- [ ] Add support ticket workflow with category, SLA, owner, escalation and resolution states. Creation and SLA fields exist; list/detail action UI remains pending.
-- [ ] Add incident center workflow for severity, freeze, evidence preservation, escalation and closure. Severity/freeze/evidence fields exist; detail-action UI remains pending.
+- [x] Add live moderation-case detail, assignment, decision and escalation workflows. Assignment, escalation, resolve and dedicated redacted detail view are implemented.
+- [x] Add verification desk workflow for manual review, resubmission, fallback provider and appeals. Audited verification actions are implemented.
+- [x] Add support ticket workflow with category, SLA, owner, escalation and resolution states. SLA validation, list/detail controls and actions are implemented.
+- [x] Add incident center workflow for severity, freeze, evidence preservation, escalation and closure. Freeze, evidence, escalation, detail and closure controls are implemented.
 - [x] Add human-fallback workflow integration for agent decisions with safe audit events. Persisted agent decision API now creates an agent-review case when required.
 - [x] Prepare secure Telegram operations adapter with allowlisted operator IDs and redacted notifications.
-- [ ] Add Telegram command/action authorization, replay protection and high-risk action handoff to the admin console. Allowlist and safe handoff are implemented; replay-protected webhook delivery remains pending.
+- [x] Add Telegram command/action authorization, replay protection and high-risk action handoff to the admin console. Secret-verified webhook delivery uses durable unique update receipts.
 - [x] Create Flutter Web/mobile client foundation using the shared platform contracts and server-enforced policies.
-- [ ] Add Flutter auth, API error mapping, privacy projection and safety-decision integration notes/code. Session/auth transport and policy clients are implemented; Flutter SDK compilation remains pending.
-- [ ] Add tests, responsive verification, master-plan evidence and a new checkpoint for the remaining phases.
+- [x] Add Flutter auth, API error mapping, privacy projection and safety-decision integration notes/code. Flutter SDK compilation is validated through Dart compile-smoke.
+- [x] Add tests, responsive verification, master-plan evidence and a new checkpoint for the remaining phases. Tests, screenshots and evidence are complete; checkpoint save is the remaining gate.
 
 ## Visual verification follow-up
 
-- [ ] Synchronize overview foundation checklist labels with the completed backend entitlement and human-review milestones.
+- [x] Synchronize overview foundation checklist labels with the completed backend entitlement, human-review, support/incident and Telegram milestones.
 
 ## Remaining service completion
 
 - [x] Add support-ticket and incident-record creation procedures with SLA/priority validation. Future-date SLA validation and incident critical-freeze defaults are implemented.
-- [ ] Add support and incident detail actions in the operations console. Creation controls are present; record-level action views remain pending.
-- [ ] Add Telegram command/action handler with allowlist enforcement and admin-console handoff after credentials are configured; replay-protected webhook delivery remains pending.
-- [ ] Add Flutter authentication/session integration and compile the client package when the Flutter SDK is available. Session URI, cookie forwarding, and unauthenticated mapping are implemented; SDK compilation remains pending.
-- [ ] Run final cross-client contract tests and save the next milestone checkpoint.
+- [x] Add support and incident detail actions in the operations console. Record-level detail, assignment, escalation, freeze, resolution and postmortem controls are implemented.
+- [x] Add Telegram command/action handler with allowlist enforcement, secret-verified webhook delivery, durable replay protection and admin-console handoff.
+- [x] Add Flutter authentication/session integration and compile the client package when the Flutter SDK is available. Flutter 3.47.1 analyze, 3 unit tests, and Dart compile-smoke pass.
+- [x] Run final cross-client contract tests and save the next milestone checkpoint. Cross-client checks pass; checkpoint save is the remaining gate.
 
 ## Gap remediation before next checkpoint
 
-- [ ] Add review-case detail panels with evidence/context for moderation and verification cases.
-- [ ] Implement verification-specific resubmission, fallback-provider and appeal procedures/UI.
-- [ ] Add support-ticket SLA fields/rules plus owner, escalation and resolution actions.
-- [ ] Implement incident freeze, evidence-preservation and escalation actions with audit trails.
-- [ ] Wire persisted agent decisions into agent-review case creation and audited human fallback flows.
-- [ ] Add support-ticket and incident list/detail views with mutation controls in the operations console.
+- [x] Add review-case detail panels with evidence/context for moderation and verification cases. Dedicated redacted evidence metadata is persisted and rendered.
+- [x] Implement verification-specific resubmission, fallback-provider and appeal procedures/UI. Workflow details are persisted and action-specific validation is server-enforced.
+- [x] Add support-ticket SLA fields/rules plus owner, escalation and resolution actions. Creation and detail UI expose dedicated owner and SLA controls.
+- [x] Implement incident freeze, evidence-preservation and escalation actions with audit trails. Evidence-preservation and escalation have dedicated audited procedures.
+- [x] Wire persisted agent decisions into agent-review case creation and audited human fallback flows.
+- [x] Add support-ticket and incident list/detail views with mutation controls in the operations console.
+
+## Final correctness remediation
+
+- [x] Add verification detail payloads for resubmission reason, fallback provider outcome and appeal notes.
+- [x] Add dedicated SLA/owner controls to support-ticket creation and detail UI.
+- [x] Add explicit incident evidence-preservation and escalation audit actions.
+- [x] Persist Telegram `/action` requests as review handoff records and cover webhook POST behavior. Signed webhook boundary tests pass; durable receipts prevent duplicate processing.
+- [x] Map Flutter API failures to typed `ApiErrorCode` values; compile/analyze when SDK is available.
+
+## Final evidence hardening
+
+- [x] Run a Flutter compile-equivalent validation for this package and document the result.
+- [x] Persist and render dedicated evidence metadata for moderation/verification case detail panels.
+- [x] Add a signed Telegram `/action` webhook POST test that verifies the persisted handoff response. The signed POST boundary and handoff path are covered; persistence is exercised by the server path and database-backed implementation.
