@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { drizzle } from "drizzle-orm/mysql2";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import {
   agentDecisions,
   auditLogs,
@@ -308,6 +308,18 @@ export async function listReviewCasesByType(caseType: "moderation" | "verificati
   return db.select().from(reviewCases).where(eq(reviewCases.caseType, caseType)).orderBy(desc(reviewCases.createdAt)).limit(50);
 }
 
+export async function listReviewCasesByTypePage(caseType: "moderation" | "verification" | "support" | "incident" | "agent_review", limit = 50, cursor?: number, filters: { status?: "open" | "assigned" | "escalated" | "resolved" | "appealed"; severity?: "low" | "medium" | "high" | "critical" } = {}) {
+  const db = await getDb();
+  if (!db) return { items: [], nextCursor: null };
+  const pageSize = Math.min(Math.max(limit, 1), 100);
+  const conditions = [eq(reviewCases.caseType, caseType)];
+  if (cursor) conditions.push(lt(reviewCases.id, cursor));
+  if (filters.status) conditions.push(eq(reviewCases.status, filters.status));
+  if (filters.severity) conditions.push(eq(reviewCases.severity, filters.severity));
+  const rows = await db.select().from(reviewCases).where(and(...conditions)).orderBy(desc(reviewCases.id)).limit(pageSize);
+  return { items: rows, nextCursor: rows.length === pageSize ? rows[rows.length - 1]?.id ?? null : null };
+}
+
 export async function createReviewCase(input: typeof reviewCases.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
@@ -384,13 +396,30 @@ export async function createIncidentRecord(input: typeof incidentRecords.$inferI
 export async function claimTelegramUpdate(input: typeof telegramUpdateReceipts.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
-  try {
-    await db.insert(telegramUpdateReceipts).values(input);
+  const existing = await db.select().from(telegramUpdateReceipts).where(eq(telegramUpdateReceipts.updateId, input.updateId)).limit(1);
+  if (!existing[0]) {
+    await db.insert(telegramUpdateReceipts).values({ ...input, status: "processing", attempts: 1 });
     return true;
-  } catch (error) {
-    if (String(error).toLowerCase().includes("duplicate") || String(error).toLowerCase().includes("unique")) return false;
-    throw error;
   }
+  if (existing[0].status === "processed" || existing[0].status === "dead_letter") return false;
+  if (existing[0].nextAttemptAt && existing[0].nextAttemptAt.getTime() > Date.now()) return false;
+  await db.update(telegramUpdateReceipts).set({ status: "processing", attempts: sql`${telegramUpdateReceipts.attempts} + 1`, lastError: null, nextAttemptAt: null }).where(eq(telegramUpdateReceipts.id, existing[0].id));
+  return true;
+}
+
+export async function completeTelegramUpdate(updateId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(telegramUpdateReceipts).set({ status: "processed", processedAt: new Date(), lastError: null, nextAttemptAt: null }).where(eq(telegramUpdateReceipts.updateId, updateId));
+}
+
+export async function failTelegramUpdate(updateId: string, error: unknown) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const current = await db.select({ attempts: telegramUpdateReceipts.attempts }).from(telegramUpdateReceipts).where(eq(telegramUpdateReceipts.updateId, updateId)).limit(1);
+  const attempts = current[0]?.attempts ?? 1;
+  const deadLetter = attempts >= 5;
+  await db.update(telegramUpdateReceipts).set({ status: deadLetter ? "dead_letter" : "failed", lastError: String(error).slice(0, 1000), nextAttemptAt: deadLetter ? null : new Date(Date.now() + Math.min(60 * 60 * 1000, 2 ** attempts * 1000)) }).where(eq(telegramUpdateReceipts.updateId, updateId));
 }
 
 export async function createAgentDecision(input: typeof agentDecisions.$inferInsert) {

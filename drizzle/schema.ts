@@ -406,7 +406,11 @@ export const telegramUpdateReceipts = mysqlTable("telegram_update_receipts", {
   updateId: varchar("updateId", { length: 64 }).notNull().unique(),
   operatorId: varchar("operatorId", { length: 64 }).notNull(),
   command: varchar("command", { length: 160 }).notNull(),
-  processedAt: timestamp("processedAt").defaultNow().notNull(),
+  status: mysqlEnum("status", ["received", "processing", "processed", "failed", "dead_letter"]).notNull().default("received"),
+  attempts: int("attempts").notNull().default(0),
+  lastError: text("lastError"),
+  nextAttemptAt: timestamp("nextAttemptAt"),
+  processedAt: timestamp("processedAt"),
 });
 
 export const auditLogs = mysqlTable("audit_logs", {

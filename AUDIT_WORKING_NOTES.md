@@ -65,3 +65,6 @@ A fresh production dependency audit on 25 Aug 2026 reports 81 vulnerable transit
 
 
 The continuation also added typed community eligibility evaluation for JSON and legacy text rules. Join and availability decisions now require active status plus configured verification, religion and country conditions; Coming Soon remains read-only. Hidden/profile-visible conversations and messages now have dedicated tables, accepted-match gating, participant authorization, close/block checks, server-side message safety evaluation and published-message listing. The message write and conversation timestamp update are atomic; the browser-facing procedure cannot persist an unsafe message.
+
+
+The queue contract now has additive cursor-paginated endpoints with bounded page sizes (1–100) and typed status/severity filters, preserving the existing console list procedures for compatibility. A post-upgrade production audit shows 50 remaining advisories across 600 production dependencies: 1 critical, 8 high, 32 moderate and 9 low. Direct `axios` was upgraded from 1.12.2 to 1.19.0 and `nanoid` from 5.1.6 to 5.1.16; full tests and build still pass. P1-12 remains open because transitive advisories, including a critical finding, require a separate compatibility-led dependency maintenance release.

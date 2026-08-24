@@ -30,4 +30,9 @@ describe("safety engine", () => {
     expect(applySafetyDecision("Say @handle", [match])).toMatchObject({ allowed: true, safeText: "Say [hidden]" });
     expect(applySafetyDecision("unsafe", [{ ...match, action: "block" as const }])).toMatchObject({ allowed: false, safeText: null });
   });
+
+  it("masks the original obfuscated text rather than the normalized token", () => {
+    const matches = evaluateSafetyRules("Contact +91 987-654-3210 today", "messages", [{ ...rules[0], action: "mask" as const }]);
+    expect(applySafetyDecision("Contact +91 987-654-3210 today", matches)).toMatchObject({ allowed: true, safeText: "Contact [hidden] today" });
+  });
 });

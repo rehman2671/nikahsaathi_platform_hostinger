@@ -127,6 +127,13 @@
       "when": 1787603794138,
       "tag": "0017_first_toad_men",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1787604381125,
+      "tag": "0018_lush_lord_tyger",
+      "breakpoints": true
     }
   ]
 }

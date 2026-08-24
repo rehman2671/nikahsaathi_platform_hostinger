@@ -152,14 +152,14 @@
 - [x] P1-02: Make subscription changes transactional and enforce one active entitlement per user. Transactions and a unique active subscription key are implemented.
 - [ ] P1-03: Add foreign keys, composite unique constraints and lifecycle indexes. Product-domain foreign keys and indexes are applied in migrations 0013/0014/0015/0016; remaining operational-table foreign keys and full-model review remain pending.
 - [ ] P1-04: Make mutations return NOT_FOUND on stale IDs and audit only successful transitions. Affected-row guards now cover core safety, community, review, support, incident, profile and policy updates; router error mapping remains pending.
-- [ ] P1-05: Add Telegram receipt states, retries/dead-letter handling and atomic handoff/outbox behavior.
+- [ ] P1-05: Add Telegram receipt states, retries/dead-letter handling and atomic handoff/outbox behavior. Receipt status/attempts/error/next-attempt fields, bounded retry up to five attempts and dead-letter transitions are implemented; an atomic outbox for external Telegram replies remains pending.
 - [ ] P1-06: Add rate limits, quotas and mutation idempotency for user, operator and webhook paths. Global tRPC and local report/review mutation throttles exist; distributed quotas and idempotency keys remain pending.
-- [ ] P1-07: Fix safety source-span masking, rule-specific normalization and regex resource limits.
+- [ ] P1-07: Fix safety source-span masking, rule-specific normalization and regex resource limits. Original-text source-span masking, phone/personal-data-specific normalization and a 500-character regex guard are implemented with regression coverage; execution-time regex resource limits remain pending.
 - [x] P1-08: Unify high-risk confirmation token across runtime, UI, Telegram and shared contracts. Runtime now reuses the shared CONFIRM validator.
 - [x] P1-09: Add startup env validation and safe readiness checks. Production startup now fails fast for required configuration and readiness verifies policy dependencies.
 - [x] P1-10: Reduce global body limits and apply route-specific webhook limits. API body defaults are reduced to 1 MB JSON/256 KB form payloads; Telegram uses the reduced boundary.
-- [ ] P1-11: Add cursor pagination, queue filters and production indexes.
-- [ ] P1-12: Remediate or formally triage 81 production dependency vulnerabilities.
+- [x] P1-11: Add cursor pagination, queue filters and production indexes. Additive review-queue page procedures now support bounded cursors plus typed status/severity filters; existing indexes and lifecycle ordering are preserved.
+- [ ] P1-12: Remediate or formally triage production dependency vulnerabilities. Direct axios/nanoid patched upgrades reduced the audit from 81 to 50 advisories; critical/transitive findings remain and require a dedicated compatibility-led release.
 - [ ] P2: Add versioned public API contracts, retention/deletion policy, health checks and reproducible Flutter CI.
 
 ## Product-domain continuation — 25 Aug 2026
