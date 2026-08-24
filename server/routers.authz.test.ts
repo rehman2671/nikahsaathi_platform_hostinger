@@ -39,6 +39,7 @@ describe("operations authorization", () => {
     ["updateProfileFieldPolicy", () => appRouter.createCaller(contextForRole("user")).operations.updateProfileFieldPolicy({ id: 1, freeAccess: true })],
     ["authorizeHighRiskAction", () => appRouter.createCaller(contextForRole("user")).operations.authorizeHighRiskAction({ action: "permanent_ban", confidence: 0.4, humanDecision: "reject", secondConfirmation: "CONFIRM" })],
     ["verificationAction", () => appRouter.createCaller(contextForRole("user")).operations.verificationAction({ caseId: 1, action: "appeal", reason: "member appeal" })],
+    ["createHumanReviewCase", () => appRouter.createCaller(contextForRole("user")).operations.createHumanReviewCase({ caseType: "agent_review", severity: "high", summary: "unauthorized case" })],
     ["preserveIncidentEvidence", () => appRouter.createCaller(contextForRole("user")).operations.preserveIncidentEvidence({ id: 1, evidenceReference: "secure-ref" })],
     ["escalateIncident", () => appRouter.createCaller(contextForRole("user")).operations.escalateIncident({ id: 1, reason: "critical escalation" })],
   ])("rejects regular users from %s", async (_name, request) => {

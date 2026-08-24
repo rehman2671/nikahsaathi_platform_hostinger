@@ -142,22 +142,51 @@
 
 ## Core backend audit remediation gates — 25 Aug 2026
 
-- [ ] P0-01: Add user profiles, profile lifecycle, photos, discovery, interests, matches, blocks, reports and verification submissions.
-- [ ] P0-02: Seed/version baseline safety rules and plan entitlements; add readiness validation for missing mandatory policy data.
-- [ ] P0-03: Add server-authoritative post/comment/message/profile write procedures invoking safety decisions transactionally.
-- [ ] P0-04: Add authenticated, ownership-aware storage metadata and signed URL authorization for private/restricted media.
-- [ ] P0-05: Add split-origin CORS, credential policy, CSRF/origin protection and deployment integration tests.
-- [ ] P0-06: Reconcile TypeScript/Dart safety response contracts, including risk and masking fields.
-- [ ] P1-01: Enforce typed community eligibility, verification and membership rules server-side.
-- [ ] P1-02: Make subscription changes transactional and enforce one active entitlement per user.
-- [ ] P1-03: Add foreign keys, composite unique constraints and lifecycle indexes.
-- [ ] P1-04: Make mutations return NOT_FOUND on stale IDs and audit only successful transitions.
+- [x] P0-01: Add user profiles, profile lifecycle, photos, discovery, interests, matches, blocks, reports and verification submissions. Server-authoritative discovery, entitlement/relationship-aware profile-photo projection, owned photo linkage/listing, match request plus accept/reject transitions, mutual blocking, report-to-review-case creation and verification submission-to-verification-queue linkage are implemented with typed contracts.
+- [x] P0-02: Seed/version baseline safety rules and plan entitlements; add readiness validation for missing mandatory policy data. Idempotent bootstrap now creates baseline rule versions and readiness verifies exact baseline keys/rules.
+- [ ] P0-03: Add server-authoritative post/comment/message/profile write procedures invoking safety decisions transactionally. Server procedures now cover posts, comments, messages and profiles with safety evaluation before persistence; a shared DB transaction boundary for safety decision/audit/content write remains a hardening follow-up.
+- [x] P0-04: Add authenticated, ownership-aware storage metadata and signed URL authorization for private/restricted media. Active media metadata, ownership checks and restricted-admin access are implemented.
+- [ ] P0-05: Add split-origin CORS, credential policy, CSRF/origin protection and deployment integration tests. Explicit-origin CORS, credential headers, origin checks and double-submit CSRF protection are implemented with unit coverage; deployment-level integration validation remains pending.
+- [x] P0-06: Reconcile TypeScript/Dart safety response contracts, including risk and masking fields. Server, TypeScript and Dart safety payload fields are aligned.
+- [x] P1-01: Enforce typed community eligibility, verification and membership rules server-side. Join and availability now evaluate active status, optional verified requirement, and normalized religion/country requirements; Coming Soon remains read-only.
+- [x] P1-02: Make subscription changes transactional and enforce one active entitlement per user. Transactions and a unique active subscription key are implemented.
+- [ ] P1-03: Add foreign keys, composite unique constraints and lifecycle indexes. Product-domain foreign keys and indexes are applied in migrations 0013/0014/0015/0016; remaining operational-table foreign keys and full-model review remain pending.
+- [ ] P1-04: Make mutations return NOT_FOUND on stale IDs and audit only successful transitions. Affected-row guards now cover core safety, community, review, support, incident, profile and policy updates; router error mapping remains pending.
 - [ ] P1-05: Add Telegram receipt states, retries/dead-letter handling and atomic handoff/outbox behavior.
-- [ ] P1-06: Add rate limits, quotas and mutation idempotency for user, operator and webhook paths.
+- [ ] P1-06: Add rate limits, quotas and mutation idempotency for user, operator and webhook paths. Global tRPC and local report/review mutation throttles exist; distributed quotas and idempotency keys remain pending.
 - [ ] P1-07: Fix safety source-span masking, rule-specific normalization and regex resource limits.
-- [ ] P1-08: Unify high-risk confirmation token across runtime, UI, Telegram and shared contracts.
-- [ ] P1-09: Add startup env validation and safe readiness checks.
-- [ ] P1-10: Reduce global body limits and apply route-specific webhook limits.
+- [x] P1-08: Unify high-risk confirmation token across runtime, UI, Telegram and shared contracts. Runtime now reuses the shared CONFIRM validator.
+- [x] P1-09: Add startup env validation and safe readiness checks. Production startup now fails fast for required configuration and readiness verifies policy dependencies.
+- [x] P1-10: Reduce global body limits and apply route-specific webhook limits. API body defaults are reduced to 1 MB JSON/256 KB form payloads; Telegram uses the reduced boundary.
 - [ ] P1-11: Add cursor pagination, queue filters and production indexes.
 - [ ] P1-12: Remediate or formally triage 81 production dependency vulnerabilities.
 - [ ] P2: Add versioned public API contracts, retention/deletion policy, health checks and reproducible Flutter CI.
+
+## Product-domain continuation — 25 Aug 2026
+
+- [x] Add server-authoritative interests, discovery, blocks, reports and verification submission workflows.
+- [x] Add owned profile-photo linkage/listing and relationship/consent-aware visible-photo projection.
+- [x] Add full match request, accept and reject state transitions with requester/recipient enforcement.
+- [x] Link verification submissions to durable verification review cases and validate restricted evidence ownership.
+- [x] Add accepted-match-gated hidden/profile-visible messaging with safety-gated writes and participant authorization.
+- [x] Add typed community eligibility evaluation and align available-community `canJoin` with server rules.
+- [x] Add split-origin CORS/CSRF middleware and focused HTTP-security regression coverage.
+- [ ] Add integration-level HTTP tests for CORS preflight, CSRF rejection/acceptance and authenticated tRPC mutations.
+
+## Audit follow-up: policy bootstrap correctness
+
+- [x] Add baseline `safety_rule_versions` rows together with each default safety rule.
+- [x] Strengthen readiness to verify exact required plan codes, entitlement keys and baseline safety rules.
+- [x] Add fail-fast startup validation for required deployment secrets/config before accepting requests.
+
+- [x] P0-07: Fix Flutter tRPC query transport and batch-envelope decoding; query procedures now use GET/batch and direct mutation envelopes are supported.
+
+## Audit follow-up: invariant and webhook parser correctness
+
+- [ ] Clear the prior subscription active lock key during transactional expiry and cover repeated active reassignment.
+- [ ] Add a dedicated small Telegram webhook body parser and oversized payload regression coverage.
+
+- [ ] Enforce current application binding on verified session JWTs and add cross-app token regression coverage.
+
+- [ ] Restrict arbitrary human-review case creation to internal agent/operator paths and rate-limit review queue creation. Public case creation is now admin-only and agent persistence remains the internal creation path; rate limiting/idempotency remains pending.
+- [x] Make human review record plus review-case transition atomic and reject orphaned review records. Review recording now runs in one transaction, validates the case first and rejects missing targets.

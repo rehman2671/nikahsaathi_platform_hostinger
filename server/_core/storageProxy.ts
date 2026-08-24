@@ -1,5 +1,7 @@
 import type { Express } from "express";
 import { ENV } from "./env";
+import { sdk } from "./sdk";
+import { getActiveMediaAssetByKey } from "../db";
 
 export function registerStorageProxy(app: Express) {
   app.get("/manus-storage/*", async (req, res) => {
@@ -7,6 +9,28 @@ export function registerStorageProxy(app: Express) {
     if (!key) {
       res.status(400).send("Missing storage key");
       return;
+    }
+
+    const asset = await getActiveMediaAssetByKey(key);
+    if (!asset) {
+      res.status(404).send("Storage asset not found");
+      return;
+    }
+
+    let user: Awaited<ReturnType<typeof sdk.authenticateRequest>> | null = null;
+    if (asset.visibility !== "public") {
+      try {
+        user = await sdk.authenticateRequest(req);
+      } catch {
+        res.status(401).send("Authentication required");
+        return;
+      }
+      const ownerAllowed = user.id === asset.ownerUserId;
+      const restrictedAdminAllowed = asset.visibility === "restricted" && user.role === "admin";
+      if (!ownerAllowed && !restrictedAdminAllowed) {
+        res.status(403).send("Storage access denied");
+        return;
+      }
     }
 
     if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {

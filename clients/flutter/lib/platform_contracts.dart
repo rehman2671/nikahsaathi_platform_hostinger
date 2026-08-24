@@ -34,17 +34,21 @@ class CommunitySummary {
 }
 
 class SafetyDecision {
-  const SafetyDecision({required this.allowed, required this.action, required this.highestRisk, this.maskedText});
+  const SafetyDecision({required this.allowed, required this.action, required this.highestRisk, this.maskedText, this.safeText, this.explanation});
   final bool allowed;
   final SafetyAction action;
   final String highestRisk;
   final String? maskedText;
+  final String? safeText;
+  final String? explanation;
 
   factory SafetyDecision.fromJson(Map<String, dynamic> json) => SafetyDecision(
         allowed: json['allowed'] == true,
         action: SafetyAction.values.firstWhere((item) => item.name == _camelCase(json['action'] as String? ?? 'allow'), orElse: () => SafetyAction.allow),
         highestRisk: json['highestRisk'] as String? ?? 'low',
         maskedText: json['maskedText'] as String?,
+        safeText: json['safeText'] as String?,
+        explanation: json['explanation'] as String?,
       );
 }
 

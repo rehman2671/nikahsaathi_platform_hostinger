@@ -4,7 +4,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { evaluateSafetyRules, findBlockedDomains, highestSafetyAction } from "./safetyEngine";
+import { applySafetyDecision, evaluateSafetyRules, findBlockedDomains } from "./safetyEngine";
 import { projectProfile, resolveEffectivePlan } from "./entitlements";
 import { canExecuteApprovedAction } from "./approvalPolicy";
 import { getCommunityPermissions } from "./communityPolicy";
@@ -37,6 +37,7 @@ import {
   joinCommunity,
   leaveCommunity,
   listCommunities,
+  canUserJoinCommunity,
   listCommunityModerators,
   listCommunityMembers,
   listAuditLogs,
@@ -52,6 +53,13 @@ import {
   listSubscriptionPlans,
   updateSubscriptionPlan,
   changeUserSubscription,
+  createMediaAsset,
+  createPost,
+  createComment,
+  getPost,
+  listCommunityPosts,
+  listPostComments,
+  isActiveCommunityMember,
   recordHumanReview,
   rollbackSafetyRule,
   setCommunityStatus,
@@ -59,6 +67,27 @@ import {
   removeCommunityModerator,
   setSafetyRuleStatus,
   updateProfileFieldPolicy,
+  getUserProfile,
+  upsertUserProfile,
+  listUserInterests,
+  replaceUserInterests,
+  listDiscoverableProfiles,
+  upsertMatchRequest,
+  listUserMatches,
+  getRelationshipState,
+  transitionMatch,
+  linkProfilePhoto,
+  listProfilePhotos,
+  listVisibleProfilePhotos,
+  openConversation,
+  listUserConversations,
+  createMessage,
+  listConversationMessages,
+  setUserBlock,
+  revokeUserBlock,
+  createUserReport,
+  submitVerification,
+  listVerificationSubmissions,
 } from "./db";
 
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -66,6 +95,38 @@ const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
     throw new TRPCError({ code: "FORBIDDEN", message: "Admin access is required" });
   }
   return next();
+});
+
+const contentInput = z.object({ body: z.string().trim().min(1).max(5000) });
+
+type MutationBucket = { startedAt: number; count: number };
+const mutationBuckets = new Map<string, MutationBucket>();
+function enforceMutationRateLimit(userId: number, operation: string, max: number, windowMs: number) {
+  const now = Date.now();
+  const key = `${operation}:${userId}`;
+  const current = mutationBuckets.get(key);
+  const bucket = !current || now - current.startedAt >= windowMs ? { startedAt: now, count: 0 } : current;
+  bucket.count += 1;
+  mutationBuckets.set(key, bucket);
+  if (mutationBuckets.size > 10000) {
+    mutationBuckets.forEach((item, itemKey) => { if (now - item.startedAt >= windowMs) mutationBuckets.delete(itemKey); });
+  }
+  if (bucket.count > max) throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Too many requests; try again later" });
+}
+
+const profileInput = z.object({
+  displayName: z.string().trim().min(1).max(160).optional(),
+  introduction: z.string().trim().max(5000).optional(),
+  religion: z.string().trim().max(80).optional(),
+  country: z.string().trim().max(80).optional(),
+  city: z.string().trim().max(120).optional(),
+  profession: z.string().trim().max(160).optional(),
+  education: z.string().trim().max(200).optional(),
+  languages: z.string().trim().max(255).optional(),
+  marriageExpectations: z.string().trim().max(5000).optional(),
+  ownerConsent: z.record(z.string(), z.boolean()).optional(),
+  ownerPrivacy: z.record(z.string(), z.boolean()).optional(),
+  profileStatus: z.enum(["draft", "pending_review"]).optional(),
 });
 
 const ruleInput = z.object({
@@ -88,8 +149,139 @@ export const appRouter = router({
       return { success: true } as const;
     }),
   }),
+  matrimony: router({
+    myInterests: protectedProcedure.query(({ ctx }) => listUserInterests(ctx.user.id)),
+    replaceMyInterests: protectedProcedure.input(z.object({ interestKeys: z.array(z.string().trim().min(1).max(80)).max(50) })).mutation(async ({ input, ctx }) => ({ interestKeys: await replaceUserInterests(ctx.user.id, input.interestKeys) })),
+    discoverProfiles: protectedProcedure
+      .input(z.object({ limit: z.number().int().min(1).max(50).default(30) }))
+      .query(async ({ input, ctx }) => {
+        const [subscription, policies, candidates] = await Promise.all([
+          getEffectiveSubscription(ctx.user.id),
+          listProfileFieldPolicies(),
+          listDiscoverableProfiles(ctx.user.id, input.limit),
+        ]);
+        const plan = resolveEffectivePlan(subscription);
+        const parseRecord = (value: string | null) => {
+          try { return value ? JSON.parse(value) as Record<string, boolean | undefined> : {}; } catch { return {}; }
+        };
+        const visiblePhotos = await Promise.all(candidates.map(profile => listVisibleProfilePhotos(ctx.user.id, profile.userId)));
+        return {
+          plan,
+          profiles: candidates.map((profile, index) => ({
+            userId: profile.userId,
+            photos: visiblePhotos[index],
+            profile: projectProfile(
+              { ...profile, ownerConsent: undefined, ownerPrivacy: undefined },
+              policies,
+              {
+                plan,
+                ownerConsent: parseRecord(profile.ownerConsent),
+                ownerPrivacy: parseRecord(profile.ownerPrivacy),
+                verificationState: profile.verificationState,
+                relationshipState: "none",
+              },
+            ),
+          })),
+        };
+      }),
+    requestMatch: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).mutation(async ({ input, ctx }) => ({ matchId: await upsertMatchRequest(ctx.user.id, input.userId) })),
+    myMatches: protectedProcedure.query(({ ctx }) => listUserMatches(ctx.user.id)),
+    acceptMatch: protectedProcedure.input(z.object({ matchId: z.number().int().positive() })).mutation(async ({ input, ctx }) => ({ status: await transitionMatch(ctx.user.id, input.matchId, "accept") })),
+    rejectMatch: protectedProcedure.input(z.object({ matchId: z.number().int().positive() })).mutation(async ({ input, ctx }) => ({ status: await transitionMatch(ctx.user.id, input.matchId, "reject") })),
+    linkProfilePhoto: protectedProcedure.input(z.object({ mediaAssetId: z.number().int().positive(), sortOrder: z.number().int().min(0).max(100).default(0), isPrimary: z.boolean().default(false) })).mutation(async ({ input, ctx }) => ({ photoId: await linkProfilePhoto(ctx.user.id, input.mediaAssetId, input.sortOrder, input.isPrimary) })),
+    myProfilePhotos: protectedProcedure.query(({ ctx }) => listProfilePhotos(ctx.user.id)),
+    openConversation: protectedProcedure.input(z.object({ userId: z.number().int().positive(), identityMode: z.enum(["hidden", "profile_visible"]).default("hidden") })).mutation(async ({ input, ctx }) => ({ conversationId: await openConversation(ctx.user.id, input.userId, input.identityMode) })),
+    myConversations: protectedProcedure.query(({ ctx }) => listUserConversations(ctx.user.id)),
+    conversationMessages: protectedProcedure.input(z.object({ conversationId: z.number().int().positive() })).query(({ input, ctx }) => listConversationMessages(ctx.user.id, input.conversationId)),
+    sendMessage: protectedProcedure.input(z.object({ conversationId: z.number().int().positive(), body: z.string().trim().min(1).max(5000) })).mutation(async ({ input, ctx }) => {
+      const [rules, domains] = await Promise.all([listSafetyRules(), listBlockedDomains()]);
+      const matches = evaluateSafetyRules(input.body, "messages", rules);
+      const blockedUrls = findBlockedDomains(input.body, domains.filter(domain => domain.isActive).map(domain => domain.domain));
+      const decision = applySafetyDecision(input.body, matches, blockedUrls);
+      if (!decision.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: decision.explanation ?? "This message cannot be sent" });
+      const messageId = await createMessage(ctx.user.id, input.conversationId, decision.safeText ?? input.body, "published");
+      return { messageId, safety: { action: decision.action, maskedText: decision.safeText, highestRisk: matches[0]?.severity ?? (blockedUrls.length ? "high" : "low") } };
+    }),
+    blockUser: protectedProcedure.input(z.object({ userId: z.number().int().positive(), reason: z.string().trim().max(200).optional() })).mutation(async ({ input, ctx }) => ({ blockId: await setUserBlock(ctx.user.id, input.userId, input.reason) })),
+    unblockUser: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).mutation(async ({ input, ctx }) => { await revokeUserBlock(ctx.user.id, input.userId); return { success: true } as const; }),
+    reportUser: protectedProcedure.input(z.object({ userId: z.number().int().positive(), reportType: z.enum(["harassment", "scam", "impersonation", "unsafe_behavior", "spam", "other"]), details: z.string().trim().max(4000).optional() })).mutation(({ input, ctx }) => { enforceMutationRateLimit(ctx.user.id, "user-report", 10, 10 * 60 * 1000); return createUserReport({ reporterUserId: ctx.user.id, reportedUserId: input.userId, reportType: input.reportType, details: input.details }); }),
+    submitVerification: protectedProcedure.input(z.object({ provider: z.string().trim().min(2).max(120).default("manual"), evidenceAssetId: z.number().int().positive().optional() })).mutation(({ input, ctx }) => submitVerification({ userId: ctx.user.id, provider: input.provider, evidenceAssetId: input.evidenceAssetId })),
+    myVerificationSubmissions: protectedProcedure.query(({ ctx }) => listVerificationSubmissions(ctx.user.id)),
+  }),
   operations: router({
     accessCheck: adminProcedure.query(() => ({ allowed: true as const })),
+    myProfile: protectedProcedure.query(({ ctx }) => getUserProfile(ctx.user.id)),
+    profileByUserId: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(async ({ input, ctx }) => {
+      const profile = await getUserProfile(input.userId);
+      if (!profile) return undefined;
+      if (input.userId === ctx.user.id) return { plan: "owner" as const, profile, photos: await listVisibleProfilePhotos(ctx.user.id, input.userId) };
+      const [subscription, policies] = await Promise.all([getEffectiveSubscription(ctx.user.id), listProfileFieldPolicies()]);
+      const parseRecord = (value: string | null) => {
+        try { return value ? JSON.parse(value) as Record<string, boolean | undefined> : {}; } catch { return {}; }
+      };
+      const projected = projectProfile({ ...profile, ownerConsent: undefined, ownerPrivacy: undefined }, policies, {
+        plan: resolveEffectivePlan(subscription),
+        ownerConsent: parseRecord(profile.ownerConsent),
+        ownerPrivacy: parseRecord(profile.ownerPrivacy),
+        verificationState: profile.verificationState,
+        relationshipState: await getRelationshipState(ctx.user.id, input.userId),
+      });
+      return { plan: resolveEffectivePlan(subscription), profile: projected, photos: await listVisibleProfilePhotos(ctx.user.id, input.userId) };
+    }),
+    registerMediaAsset: protectedProcedure.input(z.object({ storageKey: z.string().trim().min(1).max(1000), purpose: z.enum(["profile_photo", "verification_evidence", "incident_evidence", "other"]), visibility: z.enum(["public", "owner_only", "restricted"]).default("owner_only") })).mutation(async ({ input, ctx }) => {
+      if (input.purpose === "incident_evidence" && ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Only operators can register incident evidence" });
+      if (input.purpose === "verification_evidence" && input.visibility !== "restricted") throw new TRPCError({ code: "BAD_REQUEST", message: "Verification evidence must remain restricted" });
+      if (input.purpose !== "profile_photo" && input.visibility === "public") throw new TRPCError({ code: "BAD_REQUEST", message: "Operational evidence cannot be public" });
+      const id = await createMediaAsset({ ownerUserId: ctx.user.id, storageKey: input.storageKey, purpose: input.purpose, visibility: input.visibility, status: "active" });
+      await createAuditLog({ actorType: "user", actorId: ctx.user.id, action: "media.register", resourceType: "media_asset", resourceId: id, metadata: JSON.stringify({ purpose: input.purpose, visibility: input.visibility }) });
+      return { id } as const;
+    }),
+    communityPosts: protectedProcedure.input(z.object({ communityId: z.number().int().positive() })).query(({ input }) => listCommunityPosts(input.communityId)),
+    postComments: protectedProcedure.input(z.object({ postId: z.number().int().positive() })).query(({ input }) => listPostComments(input.postId)),
+    createPost: protectedProcedure.input(contentInput.extend({ communityId: z.number().int().positive().optional() })).mutation(async ({ input, ctx }) => {
+      if (input.communityId && !(await isActiveCommunityMember(input.communityId, ctx.user.id))) throw new TRPCError({ code: "FORBIDDEN", message: "Join the active community before posting" });
+      const [rules, domains] = await Promise.all([listSafetyRules(), listBlockedDomains()]);
+      const matches = evaluateSafetyRules(input.body, "posts", rules);
+      const blockedUrls = findBlockedDomains(input.body, domains.filter(domain => domain.isActive).map(domain => domain.domain));
+      const decision = applySafetyDecision(input.body, matches, blockedUrls);
+      if (!decision.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: decision.explanation ?? "This post cannot be shared" });
+      const postId = await createPost({ authorId: ctx.user.id, communityId: input.communityId, body: decision.safeText ?? input.body, status: "published" });
+      await createAuditLog({ actorType: "user", actorId: ctx.user.id, action: "post.create", resourceType: "post", resourceId: postId, metadata: JSON.stringify({ communityId: input.communityId, safetyAction: decision.action }) });
+      return { postId, safety: { action: decision.action, maskedText: decision.safeText, highestRisk: matches[0]?.severity ?? (blockedUrls.length ? "high" : "low") } };
+    }),
+    createComment: protectedProcedure.input(contentInput.extend({ postId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
+      const post = await getPost(input.postId);
+      if (!post) throw new TRPCError({ code: "NOT_FOUND", message: "Post not found" });
+      if (post.communityId && !(await isActiveCommunityMember(post.communityId, ctx.user.id))) throw new TRPCError({ code: "FORBIDDEN", message: "Join the active community before commenting" });
+      const [rules, domains] = await Promise.all([listSafetyRules(), listBlockedDomains()]);
+      const matches = evaluateSafetyRules(input.body, "comments", rules);
+      const blockedUrls = findBlockedDomains(input.body, domains.filter(domain => domain.isActive).map(domain => domain.domain));
+      const decision = applySafetyDecision(input.body, matches, blockedUrls);
+      if (!decision.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: decision.explanation ?? "This comment cannot be shared" });
+      const commentId = await createComment({ postId: input.postId, authorId: ctx.user.id, body: decision.safeText ?? input.body, status: "published" });
+      await createAuditLog({ actorType: "user", actorId: ctx.user.id, action: "comment.create", resourceType: "comment", resourceId: commentId, metadata: JSON.stringify({ postId: input.postId, safetyAction: decision.action }) });
+      return { commentId, safety: { action: decision.action, maskedText: decision.safeText, highestRisk: matches[0]?.severity ?? (blockedUrls.length ? "high" : "low") } };
+    }),
+    upsertMyProfile: protectedProcedure.input(profileInput).mutation(async ({ input, ctx }) => {
+      const [rules, domains] = await Promise.all([listSafetyRules(), listBlockedDomains()]);
+      const textFields = ["displayName", "introduction", "religion", "country", "city", "profession", "education", "languages", "marriageExpectations"] as const;
+      const safeValues: Record<string, unknown> = {};
+      for (const field of textFields) {
+        const value = input[field];
+        if (value === undefined) continue;
+        const matches = evaluateSafetyRules(value, "profiles", rules);
+        const blockedUrls = findBlockedDomains(value, domains.filter(domain => domain.isActive).map(domain => domain.domain));
+        const decision = applySafetyDecision(value, matches, blockedUrls);
+        if (!decision.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: decision.explanation ?? "This profile content cannot be shared" });
+        safeValues[field] = decision.safeText ?? value;
+        if (decision.action !== "allow") await createAuditLog({ actorType: "user", actorId: ctx.user.id, action: "profile.content_sanitized", resourceType: "profile", metadata: JSON.stringify({ field, action: decision.action }) });
+      }
+      if (input.ownerConsent) safeValues.ownerConsent = JSON.stringify(input.ownerConsent);
+      if (input.ownerPrivacy) safeValues.ownerPrivacy = JSON.stringify(input.ownerPrivacy);
+      if (input.profileStatus) safeValues.profileStatus = input.profileStatus;
+      const profileId = await upsertUserProfile(ctx.user.id, safeValues);
+      return { profileId, profile: await getUserProfile(ctx.user.id) };
+    }),
     auditLogs: adminProcedure.query(() => listAuditLogs()),
     telegramStatus: adminProcedure.query(() => telegramIntegrationStatus()),
     authorizeHighRiskAction: adminProcedure
@@ -106,7 +298,8 @@ export const appRouter = router({
         const [rules, domains] = await Promise.all([listSafetyRules(), listBlockedDomains()]);
         const matches = evaluateSafetyRules(input.text, input.surface, rules);
         const blockedUrls = findBlockedDomains(input.text, domains.filter(domain => domain.isActive).map(domain => domain.domain));
-        return { allowed: matches.length === 0 && blockedUrls.length === 0, action: highestSafetyAction(matches)?.action ?? (blockedUrls.length ? "block" : "allow"), matches, blockedUrls };
+        const decision = applySafetyDecision(input.text, matches, blockedUrls);
+        return { ...decision, matches, blockedUrls, highestRisk: matches[0]?.severity ?? (blockedUrls.length ? "high" : "low"), maskedText: decision.safeText };
       }),
     createSafetyRule: adminProcedure.input(ruleInput).mutation(({ input, ctx }) =>
       createSafetyRule({ ...input, createdBy: ctx.user.id }),
@@ -137,7 +330,7 @@ export const appRouter = router({
     setBlockedDomainStatus: adminProcedure.input(z.object({ id: z.number().int().positive(), isActive: z.boolean() })).mutation(async ({ input, ctx }) => { await setBlockedDomainStatus(input.id, input.isActive); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: input.isActive ? "blocked_domain.activate" : "blocked_domain.deactivate", resourceType: "blocked_domain", resourceId: input.id }); return { success: true } as const; }),
     updateBlockedDomain: adminProcedure.input(z.object({ id: z.number().int().positive(), severity: z.enum(["low", "medium", "high", "critical"]).optional(), reason: z.string().max(500).optional() })).mutation(async ({ input, ctx }) => { const { id, ...changes } = input; await updateBlockedDomain(id, { ...changes, reason: changes.reason?.trim() }, ctx.user.id); return { success: true } as const; }),
     communities: adminProcedure.query(() => listCommunities()),
-    availableCommunities: protectedProcedure.query(async () => (await listCommunities()).map(community => ({ ...community, canJoin: community.status === "active" }))),
+    availableCommunities: protectedProcedure.query(async ({ ctx }) => { const communities = await listCommunities(); return Promise.all(communities.map(async community => ({ ...community, canJoin: await canUserJoinCommunity(community.id, ctx.user.id) }))); }),
     createCommunity: adminProcedure
       .input(z.object({
         name: z.string().min(2).max(160),
@@ -172,9 +365,9 @@ export const appRouter = router({
     leaveCommunity: protectedProcedure
       .input(z.object({ communityId: z.number().int().positive() }))
       .mutation(async ({ input, ctx }) => { await leaveCommunity(input.communityId, ctx.user.id); return { success: true } as const; }),
-    createHumanReviewCase: protectedProcedure
+    createHumanReviewCase: adminProcedure
       .input(z.object({ caseType: z.enum(["moderation", "verification", "support", "incident", "agent_review"]), severity: z.enum(["low", "medium", "high", "critical"]), summary: z.string().min(1).max(2000), subjectType: z.string().max(40).optional(), subjectId: z.number().int().positive().optional(), source: z.string().max(40).default("agent") }))
-      .mutation(async ({ input, ctx }) => ({ caseId: await createReviewCase({ ...input, assignedTo: null }) })),
+      .mutation(async ({ input, ctx }) => { enforceMutationRateLimit(ctx.user.id, "review-case", 30, 10 * 60 * 1000); return { caseId: await createReviewCase({ ...input, assignedTo: null }) }; }),
     completeHumanReview: adminProcedure
       .input(z.object({ caseId: z.number().int().positive(), decision: z.string().min(1).max(60), reasonCode: z.string().min(1).max(80), notes: z.string().max(4000).optional() }))
       .mutation(async ({ input, ctx }) => { await recordHumanReview({ ...input, reviewerId: ctx.user.id }); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "human_review.complete", resourceType: "review_case", resourceId: input.caseId, metadata: JSON.stringify({ decision: input.decision, reasonCode: input.reasonCode }) }); return { success: true } as const; }),
@@ -193,7 +386,7 @@ export const appRouter = router({
     supportQueue: adminProcedure.query(() => listReviewCasesByType("support")),
     incidentQueue: adminProcedure.query(() => listReviewCasesByType("incident")),
     agentReviewQueue: adminProcedure.query(() => listReviewCasesByType("agent_review")),
-    persistAgentDecision: adminProcedure.input(z.object({ agentType: z.string().min(2).max(80), caseId: z.number().int().positive().optional(), recommendation: z.string().min(2).max(80), confidence: z.number().min(0).max(1), modelVersion: z.string().max(80).optional(), requiresHuman: z.boolean().default(true), summary: z.string().min(3).max(2000) })).mutation(async ({ input, ctx }) => { const decisionId = await createAgentDecision({ agentType: input.agentType, caseId: input.caseId, recommendation: input.recommendation, confidence: String(input.confidence), modelVersion: input.modelVersion, requiresHuman: input.requiresHuman, persistedToReview: input.requiresHuman }); const caseId = input.requiresHuman && !input.caseId ? await createReviewCase({ caseType: "agent_review", severity: input.confidence < 0.5 ? "critical" : "high", summary: input.summary, source: input.agentType, assignedTo: null }) : input.caseId; await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "agent_decision.persist", resourceType: "agent_decision", resourceId: decisionId, metadata: JSON.stringify({ caseId, requiresHuman: input.requiresHuman }) }); return { decisionId, caseId } as const; }),
+    persistAgentDecision: adminProcedure.input(z.object({ agentType: z.string().min(2).max(80), caseId: z.number().int().positive().optional(), recommendation: z.string().min(2).max(80), confidence: z.number().min(0).max(1), modelVersion: z.string().max(80).optional(), requiresHuman: z.boolean().default(true), summary: z.string().min(3).max(2000) })).mutation(async ({ input, ctx }) => { enforceMutationRateLimit(ctx.user.id, "agent-review", 30, 10 * 60 * 1000); const decisionId = await createAgentDecision({ agentType: input.agentType, caseId: input.caseId, recommendation: input.recommendation, confidence: String(input.confidence), modelVersion: input.modelVersion, requiresHuman: input.requiresHuman, persistedToReview: input.requiresHuman }); const caseId = input.requiresHuman && !input.caseId ? await createReviewCase({ caseType: "agent_review", severity: input.confidence < 0.5 ? "critical" : "high", summary: input.summary, source: input.agentType, assignedTo: null }) : input.caseId; await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "agent_decision.persist", resourceType: "agent_decision", resourceId: decisionId, metadata: JSON.stringify({ caseId, requiresHuman: input.requiresHuman }) }); return { decisionId, caseId } as const; }),
     createSupportTicket: adminProcedure.input(z.object({ category: z.string().min(2).max(80), priority: z.enum(["normal", "high", "urgent"]).default("normal"), summary: z.string().min(3).max(2000), assignedTo: z.number().int().positive().nullable().optional(), slaDueAt: z.coerce.date().optional() })).mutation(async ({ input, ctx }) => { if (input.slaDueAt && input.slaDueAt.getTime() <= Date.now()) throw new TRPCError({ code: "BAD_REQUEST", message: "SLA due time must be in the future" }); const id = await createSupportTicket({ ...input, status: input.assignedTo ? "assigned" : "open", assignedTo: input.assignedTo ?? null }); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "support_ticket.create", resourceType: "support_ticket", resourceId: id }); return { id } as const; }),
     createIncident: adminProcedure.input(z.object({ incidentType: z.string().min(2).max(80), severity: z.enum(["low", "medium", "high", "critical"]).default("high"), summary: z.string().min(3).max(2000), evidenceReference: z.string().max(1000).optional() })).mutation(async ({ input, ctx }) => { const id = await createIncidentRecord({ ...input, status: "open", ownerId: ctx.user.id, isFrozen: input.severity === "critical" }); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "incident.create", resourceType: "incident", resourceId: id }); return { id } as const; }),
     updateSupportTicket: adminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["open", "assigned", "waiting", "escalated", "resolved"]).optional(), priority: z.enum(["normal", "high", "urgent"]).optional(), assignedTo: z.number().int().positive().nullable().optional(), slaDueAt: z.coerce.date().optional(), escalationReason: z.string().max(200).optional() })).mutation(async ({ input, ctx }) => { const { id, ...changes } = input; await updateSupportTicket(id, changes); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "support_ticket.update", resourceType: "support_ticket", resourceId: id }); return { success: true } as const; }),

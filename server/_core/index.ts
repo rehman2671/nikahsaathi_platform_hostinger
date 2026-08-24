@@ -1,5 +1,7 @@
 import "dotenv/config";
 import express from "express";
+import { parse as parseCookieHeader } from "cookie";
+import { randomBytes } from "crypto";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -9,6 +11,10 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { registerTelegramWebhookRoutes } from "../telegramWebhook";
+import { ensureCorePolicyDefaults, getCorePolicyReadiness } from "../db";
+import { validateStartupConfiguration } from "./env";
+import { applyCorsHeaders, isTrustedMutationOrigin } from "./httpSecurity";
+import { createRateLimiter } from "./rateLimit";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -30,14 +36,40 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  validateStartupConfiguration();
   const app = express();
   const server = createServer(app);
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   registerTelegramWebhookRoutes(app);
+  // User media uploads use presigned storage URLs; API bodies stay intentionally small.
+  app.use(express.json({ limit: "1mb" }));
+  app.use(express.urlencoded({ limit: "256kb", extended: true }));
+  app.use("/api/trpc", createRateLimiter({ windowMs: 60_000, max: 120, keyPrefix: "trpc" }));
+  app.use("/api/trpc", (request, response, next) => {
+    const corsApplied = applyCorsHeaders(request, (name, value) => response.setHeader(name, value));
+    if (request.method === "OPTIONS") return corsApplied ? response.sendStatus(204) : response.status(403).json({ error: "Origin is not allowed" });
+    if (request.method === "POST" && !isTrustedMutationOrigin(request)) return response.status(403).json({ error: "Origin is not allowed" });
+    const cookies = parseCookieHeader(request.headers.cookie ?? "");
+    const csrfToken = cookies.ns_csrf ?? randomBytes(24).toString("hex");
+    const forwardedProto = request.headers["x-forwarded-proto"];
+    const secure = request.protocol === "https" || (typeof forwardedProto === "string" && forwardedProto.split(",")[0]?.trim() === "https");
+    response.setHeader("Set-Cookie", `ns_csrf=${csrfToken}; Path=/; Max-Age=${60 * 60 * 24}; SameSite=${secure ? "None" : "Lax"}${secure ? "; Secure" : ""}`);
+    const usesBearerAuth = Boolean(request.headers.authorization?.startsWith("Bearer "));
+    if (request.method === "POST" && !usesBearerAuth && cookies.ns_csrf !== request.headers["x-csrf-token"]) return response.status(403).json({ error: "CSRF token is required" });
+    next();
+  });
+  app.get("/api/health/live", (_request, response) => response.json({ ok: true }));
+  app.get("/api/health/ready", async (_request, response) => {
+    const readiness = await getCorePolicyReadiness();
+    return response.status(readiness.ready ? 200 : 503).json(readiness);
+  });
+  try {
+    const bootstrap = await ensureCorePolicyDefaults();
+    console.log("[Policy] Core defaults checked", bootstrap);
+  } catch (error) {
+    console.error("[Policy] Core default bootstrap failed", error);
+  }
   // tRPC API
   app.use(
     "/api/trpc",
@@ -54,10 +86,10 @@ async function startServer() {
   }
 
   const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  const port = process.env.NODE_ENV === "development" ? await findAvailablePort(preferredPort) : preferredPort;
 
   if (port !== preferredPort) {
-    console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
+    console.log(`Port ${preferredPort} is busy in development, using port ${port} instead`);
   }
 
   server.listen(port, () => {

@@ -37,7 +37,8 @@ class NikahSaathiApiClient {
   Future<AuthSession> getSession() async {
     try {
       final body = await _call('auth.me', {});
-      return AuthSession.fromJson(body['user'] is Map ? Map<String, dynamic>.from(body['user'] as Map) : body);
+      final user = body is Map && body['user'] is Map ? Map<String, dynamic>.from(body['user'] as Map) : body is Map ? Map<String, dynamic>.from(body) : null;
+      return AuthSession.fromJson(user);
     } on NikahSaathiApiException catch (error) {
       if (error.typedCode == ApiErrorCode.unauthorized || error.typedCode == ApiErrorCode.forbidden) return const AuthSession(isAuthenticated: false);
       rethrow;
@@ -51,12 +52,14 @@ class NikahSaathiApiClient {
 
   Future<ProfileProjection> getProfileProjection({required Map<String, dynamic> profile, required Map<String, bool?> ownerConsent, required Map<String, bool?> ownerPrivacy, String? verificationState, String? relationshipState}) async {
     final body = await _call('operations.profileProjection', {'profile': profile, 'ownerConsent': ownerConsent, 'ownerPrivacy': ownerPrivacy, if (verificationState != null) 'verificationState': verificationState, if (relationshipState != null) 'relationshipState': relationshipState});
-    return ProfileProjection(Map<String, dynamic>.from(body['fields'] as Map? ?? const {}));
+    final map = body is Map ? Map<String, dynamic>.from(body) : <String, dynamic>{};
+    return ProfileProjection(Map<String, dynamic>.from(map['fields'] as Map? ?? const {}));
   }
 
   Future<List<CommunitySummary>> listCommunities() async {
     final body = await _call('operations.availableCommunities', {});
-    final values = (body['communities'] is List ? body['communities'] : body) as List? ?? const [];
+    final map = body is Map ? Map<String, dynamic>.from(body) : <String, dynamic>{};
+    final values = (map['communities'] is List ? map['communities'] : body is List ? body : const []) as List;
     return values.map((item) => CommunitySummary(
       id: item['id'] as int,
       name: item['name'] as String,
@@ -66,14 +69,17 @@ class NikahSaathiApiClient {
     )).toList();
   }
 
-  Future<Map<String, dynamic>> _call(String procedure, Map<String, dynamic> input) async {
-    final response = await _client.post(Uri.parse('$baseUrl/api/trpc/$procedure'), headers: {'content-type': 'application/json', if (sessionCookie != null) 'cookie': sessionCookie!}, body: jsonEncode({'json': input}));
+  Future<dynamic> _call(String procedure, Map<String, dynamic> input, {bool mutation = false}) async {
+    final headers = {'content-type': 'application/json', if (sessionCookie != null) 'cookie': sessionCookie!};
+    final response = mutation
+        ? await _client.post(Uri.parse('$baseUrl/api/trpc/$procedure'), headers: headers, body: jsonEncode({'json': input}))
+        : await _client.get(Uri.parse('$baseUrl/api/trpc/$procedure').replace(queryParameters: {'batch': '1', 'input': jsonEncode({'0': {'json': input}})}), headers: headers);
     final decoded = jsonDecode(response.body);
-    final envelope = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    final envelope = decoded is List && decoded.isNotEmpty && decoded.first is Map ? decoded.first as Map : decoded is Map ? decoded : <String, dynamic>{};
     final result = envelope['result'];
     final data = result is Map ? result['data'] : null;
     final payload = data is Map && data.containsKey('json') ? data['json'] : data;
-    if (response.statusCode >= 400 || payload is! Map<String, dynamic>) {
+    if (response.statusCode >= 400 || envelope['error'] != null) {
       final error = envelope['error'];
       final errorData = error is Map ? error['data'] : null;
       final rawCode = errorData is Map ? errorData['code'] as String? ?? 'REQUEST_FAILED' : 'REQUEST_FAILED';

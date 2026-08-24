@@ -24,6 +24,10 @@ export type ProfileProjectionRequest = {
 export type ContentSafetyResponse = {
   allowed: boolean;
   action: string;
+  highestRisk: string;
+  maskedText: string | null;
+  safeText: string | null;
+  explanation: string | null;
   matches: Array<{ ruleId: number; name: string; ruleType: string; severity: string; action: string; matchedText: string }>;
   blockedUrls: string[];
 };

@@ -1,6 +1,9 @@
-import type { Express, Request, Response } from "express";
+import express, { type Express, type Request, type Response } from "express";
 import { buildTelegramCommandResponse, parseTelegramCommand, redactTelegramText, telegramIntegrationStatus, verifyTelegramWebhookSecret } from "./telegramOps";
 import { claimTelegramUpdate, createAuditLog, createReviewCase } from "./db";
+import { createRateLimiter } from "./_core/rateLimit";
+
+const telegramWebhookRateLimiter = createRateLimiter({ windowMs: 60_000, max: 60, keyPrefix: "telegram-webhook" });
 
 function webhookSecret() {
   return process.env.TELEGRAM_WEBHOOK_SECRET ?? "";
@@ -28,7 +31,7 @@ export function registerTelegramWebhookRoutes(app: Express) {
     return response.json({ ok: true, ...telegramIntegrationStatus(), webhook: true });
   });
 
-  app.post("/api/telegram/webhook", async (request, response) => {
+  app.post("/api/telegram/webhook", telegramWebhookRateLimiter, express.json({ limit: "64kb" }), async (request, response) => {
     if (!isAuthorized(request)) return response.status(401).json({ ok: false });
     const update = request.body as { update_id?: number; message?: { text?: string; chat?: { id?: number }; from?: { id?: number } } };
     const updateId = update.update_id == null ? "" : String(update.update_id);

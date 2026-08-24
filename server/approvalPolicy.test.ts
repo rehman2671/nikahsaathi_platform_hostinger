@@ -10,6 +10,7 @@ describe("approval policy", () => {
 
   it("requires an explicit second confirmation for high-risk execution", () => {
     expect(canExecuteApprovedAction({ action: "identity_disclose", confidence: 0.99, humanDecision: "approve" })).toBe(false);
-    expect(canExecuteApprovedAction({ action: "identity_disclose", confidence: 0.99, humanDecision: "approve", secondConfirmation: "APPROVE" })).toBe(true);
+    expect(canExecuteApprovedAction({ action: "identity_disclose", confidence: 0.99, humanDecision: "approve", secondConfirmation: "APPROVE" })).toBe(false);
+    expect(canExecuteApprovedAction({ action: "identity_disclose", confidence: 0.99, humanDecision: "approve", secondConfirmation: "CONFIRM" })).toBe(true);
   });
 });
