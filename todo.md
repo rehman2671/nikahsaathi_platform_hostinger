@@ -91,3 +91,37 @@
 - [x] Add focused Vitest coverage for the new admin mutations and confirmation guards.
 - [x] Run typecheck, tests, production build and responsive screenshots.
 - [x] Update IMPLEMENTATION_MASTER_PLAN.md and save the next checkpoint.
+
+## Remaining roadmap: service operations, Telegram and Flutter
+
+- [ ] Add live moderation-case detail, assignment, decision and escalation workflows. Assignment/escalation/resolve mutations exist; dedicated detail/evidence view remains pending.
+- [ ] Add verification desk workflow for manual review, resubmission, fallback provider and appeals. Generic human review exists; verification-specific actions remain pending.
+- [ ] Add support ticket workflow with category, SLA, owner, escalation and resolution states. Creation and SLA fields exist; list/detail action UI remains pending.
+- [ ] Add incident center workflow for severity, freeze, evidence preservation, escalation and closure. Severity/freeze/evidence fields exist; detail-action UI remains pending.
+- [x] Add human-fallback workflow integration for agent decisions with safe audit events. Persisted agent decision API now creates an agent-review case when required.
+- [x] Prepare secure Telegram operations adapter with allowlisted operator IDs and redacted notifications.
+- [ ] Add Telegram command/action authorization, replay protection and high-risk action handoff to the admin console. Allowlist and safe handoff are implemented; replay-protected webhook delivery remains pending.
+- [x] Create Flutter Web/mobile client foundation using the shared platform contracts and server-enforced policies.
+- [ ] Add Flutter auth, API error mapping, privacy projection and safety-decision integration notes/code. Session/auth transport and policy clients are implemented; Flutter SDK compilation remains pending.
+- [ ] Add tests, responsive verification, master-plan evidence and a new checkpoint for the remaining phases.
+
+## Visual verification follow-up
+
+- [ ] Synchronize overview foundation checklist labels with the completed backend entitlement and human-review milestones.
+
+## Remaining service completion
+
+- [x] Add support-ticket and incident-record creation procedures with SLA/priority validation. Future-date SLA validation and incident critical-freeze defaults are implemented.
+- [ ] Add support and incident detail actions in the operations console. Creation controls are present; record-level action views remain pending.
+- [ ] Add Telegram command/action handler with allowlist enforcement and admin-console handoff after credentials are configured; replay-protected webhook delivery remains pending.
+- [ ] Add Flutter authentication/session integration and compile the client package when the Flutter SDK is available. Session URI, cookie forwarding, and unauthenticated mapping are implemented; SDK compilation remains pending.
+- [ ] Run final cross-client contract tests and save the next milestone checkpoint.
+
+## Gap remediation before next checkpoint
+
+- [ ] Add review-case detail panels with evidence/context for moderation and verification cases.
+- [ ] Implement verification-specific resubmission, fallback-provider and appeal procedures/UI.
+- [ ] Add support-ticket SLA fields/rules plus owner, escalation and resolution actions.
+- [ ] Implement incident freeze, evidence-preservation and escalation actions with audit trails.
+- [ ] Wire persisted agent decisions into agent-review case creation and audited human fallback flows.
+- [ ] Add support-ticket and incident list/detail views with mutation controls in the operations console.

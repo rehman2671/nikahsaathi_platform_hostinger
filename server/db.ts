@@ -1,6 +1,7 @@
 import { desc, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
+  agentDecisions,
   auditLogs,
   blockedDomains,
   communities,
@@ -9,6 +10,8 @@ import {
   humanReviews,
   profileFieldPolicies,
   reviewCases,
+  supportTickets,
+  incidentRecords,
   safetyRuleVersions,
   safetyRules,
   subscriptionPlans,
@@ -264,11 +267,62 @@ export async function createReviewCase(input: typeof reviewCases.$inferInsert) {
   return Number(result[0].insertId);
 }
 
+export async function updateReviewCase(id: number, input: Partial<Pick<typeof reviewCases.$inferInsert, "status" | "assignedTo" | "severity" | "summary">>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(reviewCases).set(input).where(eq(reviewCases.id, id));
+}
+
 export async function recordHumanReview(input: typeof humanReviews.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
   await db.insert(humanReviews).values(input);
   if (input.caseId) await db.update(reviewCases).set({ status: "resolved", assignedTo: input.reviewerId ?? null }).where(eq(reviewCases.id, input.caseId));
+}
+
+export async function createSupportTicket(input: typeof supportTickets.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(supportTickets).values(input);
+  return Number(result[0].insertId);
+}
+
+export async function createIncidentRecord(input: typeof incidentRecords.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(incidentRecords).values(input);
+  return Number(result[0].insertId);
+}
+
+export async function createAgentDecision(input: typeof agentDecisions.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const result = await db.insert(agentDecisions).values(input);
+  return Number(result[0].insertId);
+}
+
+export async function listSupportTickets() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(supportTickets).orderBy(desc(supportTickets.updatedAt)).limit(50);
+}
+
+export async function listIncidentRecords() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(incidentRecords).orderBy(desc(incidentRecords.updatedAt)).limit(50);
+}
+
+export async function updateSupportTicket(id: number, input: Partial<Pick<typeof supportTickets.$inferInsert, "status" | "priority" | "assignedTo" | "slaDueAt" | "escalationReason">>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(supportTickets).set(input).where(eq(supportTickets.id, id));
+}
+
+export async function updateIncidentRecord(id: number, input: Partial<Pick<typeof incidentRecords.$inferInsert, "status" | "ownerId" | "severity" | "isFrozen" | "evidenceReference" | "escalationReason">>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(incidentRecords).set(input).where(eq(incidentRecords.id, id));
 }
 
 export async function getEffectiveSubscription(userId: number) {

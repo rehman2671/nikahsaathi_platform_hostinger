@@ -158,9 +158,11 @@ export const humanReviews = mysqlTable("human_reviews", {
 export const supportTickets = mysqlTable("support_tickets", {
   id: int("id").autoincrement().primaryKey(),
   category: varchar("category", { length: 80 }).notNull(),
-  status: mysqlEnum("status", ["open", "assigned", "waiting", "resolved"]).notNull().default("open"),
+  status: mysqlEnum("status", ["open", "assigned", "waiting", "escalated", "resolved"]).notNull().default("open"),
   priority: mysqlEnum("priority", ["normal", "high", "urgent"]).notNull().default("normal"),
   summary: text("summary").notNull(),
+  slaDueAt: timestamp("slaDueAt"),
+  escalationReason: varchar("escalationReason", { length: 200 }),
   assignedTo: int("assignedTo"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -172,6 +174,9 @@ export const incidentRecords = mysqlTable("incident_records", {
   severity: mysqlEnum("severity", ["low", "medium", "high", "critical"]).notNull().default("high"),
   status: mysqlEnum("status", ["open", "contained", "resolved", "postmortem"]).notNull().default("open"),
   ownerId: int("ownerId"),
+  isFrozen: boolean("isFrozen").notNull().default(false),
+  evidenceReference: text("evidenceReference"),
+  escalationReason: varchar("escalationReason", { length: 200 }),
   summary: text("summary").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -185,6 +190,7 @@ export const agentDecisions = mysqlTable("agent_decisions", {
   confidence: varchar("confidence", { length: 20 }).notNull(),
   modelVersion: varchar("modelVersion", { length: 80 }),
   requiresHuman: boolean("requiresHuman").notNull().default(true),
+  persistedToReview: boolean("persistedToReview").notNull().default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

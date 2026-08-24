@@ -8,6 +8,7 @@ import { evaluateSafetyRules, findBlockedDomains, highestSafetyAction } from "./
 import { projectProfile, resolveEffectivePlan } from "./entitlements";
 import { canExecuteApprovedAction } from "./approvalPolicy";
 import { getCommunityPermissions } from "./communityPolicy";
+import { telegramIntegrationStatus } from "./telegramOps";
 import { normalizeAdminDomain, validateCommunityEligibility } from "./adminValidation";
 import {
   createAuditLog,
@@ -16,6 +17,14 @@ import {
   createBlockedDomain,
   updateBlockedDomain,
   createReviewCase,
+  updateReviewCase,
+  listSupportTickets,
+  listIncidentRecords,
+  updateSupportTicket,
+  updateIncidentRecord,
+  createSupportTicket,
+  createIncidentRecord,
+  createAgentDecision,
   createSafetyRule,
   createSafetyRuleVersion,
   updateSafetyRule,
@@ -78,6 +87,7 @@ export const appRouter = router({
   operations: router({
     accessCheck: adminProcedure.query(() => ({ allowed: true as const })),
     auditLogs: adminProcedure.query(() => listAuditLogs()),
+    telegramStatus: adminProcedure.query(() => telegramIntegrationStatus()),
     authorizeHighRiskAction: adminProcedure
       .input(z.object({ action: z.enum(["content_allow", "content_block", "verification_approve", "verification_reject", "profile_reveal", "identity_disclose", "permanent_ban", "emergency_freeze", "refund", "rule_activate"]), confidence: z.number().min(0).max(1), humanDecision: z.enum(["approve", "reject"]).optional(), secondConfirmation: z.string().optional() }))
       .mutation(async ({ input, ctx }) => { const allowed = canExecuteApprovedAction(input); if (allowed) await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "high_risk.approved", resourceType: "operational_action", metadata: JSON.stringify({ action: input.action, confidence: input.confidence }) }); return { allowed } as const; }),
@@ -123,6 +133,7 @@ export const appRouter = router({
     setBlockedDomainStatus: adminProcedure.input(z.object({ id: z.number().int().positive(), isActive: z.boolean() })).mutation(async ({ input, ctx }) => { await setBlockedDomainStatus(input.id, input.isActive); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: input.isActive ? "blocked_domain.activate" : "blocked_domain.deactivate", resourceType: "blocked_domain", resourceId: input.id }); return { success: true } as const; }),
     updateBlockedDomain: adminProcedure.input(z.object({ id: z.number().int().positive(), severity: z.enum(["low", "medium", "high", "critical"]).optional(), reason: z.string().max(500).optional() })).mutation(async ({ input, ctx }) => { const { id, ...changes } = input; await updateBlockedDomain(id, { ...changes, reason: changes.reason?.trim() }, ctx.user.id); return { success: true } as const; }),
     communities: adminProcedure.query(() => listCommunities()),
+    availableCommunities: protectedProcedure.query(async () => (await listCommunities()).map(community => ({ ...community, canJoin: community.status === "active" }))),
     createCommunity: adminProcedure
       .input(z.object({
         name: z.string().min(2).max(160),
@@ -164,11 +175,21 @@ export const appRouter = router({
       .input(z.object({ caseId: z.number().int().positive(), decision: z.string().min(1).max(60), reasonCode: z.string().min(1).max(80), notes: z.string().max(4000).optional() }))
       .mutation(async ({ input, ctx }) => { await recordHumanReview({ ...input, reviewerId: ctx.user.id }); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "human_review.complete", resourceType: "review_case", resourceId: input.caseId, metadata: JSON.stringify({ decision: input.decision, reasonCode: input.reasonCode }) }); return { success: true } as const; }),
     reviewCases: adminProcedure.query(() => listReviewCases()),
+    supportTickets: adminProcedure.query(() => listSupportTickets()),
+    incidents: adminProcedure.query(() => listIncidentRecords()),
+    updateReviewCase: adminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["open", "assigned", "escalated", "resolved", "appealed"]).optional(), assignedTo: z.number().int().positive().nullable().optional(), severity: z.enum(["low", "medium", "high", "critical"]).optional(), summary: z.string().min(1).max(2000).optional() })).mutation(async ({ input, ctx }) => { const { id, ...changes } = input; await updateReviewCase(id, changes); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "review_case.update", resourceType: "review_case", resourceId: id, metadata: JSON.stringify(changes) }); return { success: true } as const; }),
+    assignReviewCase: adminProcedure.input(z.object({ id: z.number().int().positive(), assignedTo: z.number().int().positive() })).mutation(async ({ input, ctx }) => { await updateReviewCase(input.id, { assignedTo: input.assignedTo, status: "assigned" }); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "review_case.assign", resourceType: "review_case", resourceId: input.id, metadata: JSON.stringify({ assignedTo: input.assignedTo }) }); return { success: true } as const; }),
+    escalateReviewCase: adminProcedure.input(z.object({ id: z.number().int().positive(), reason: z.string().min(3).max(500) })).mutation(async ({ input, ctx }) => { await updateReviewCase(input.id, { status: "escalated" }); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "review_case.escalate", resourceType: "review_case", resourceId: input.id, metadata: JSON.stringify({ reason: input.reason }) }); return { success: true } as const; }),
     moderationQueue: adminProcedure.query(() => listReviewCasesByType("moderation")),
     verificationQueue: adminProcedure.query(() => listReviewCasesByType("verification")),
     supportQueue: adminProcedure.query(() => listReviewCasesByType("support")),
     incidentQueue: adminProcedure.query(() => listReviewCasesByType("incident")),
     agentReviewQueue: adminProcedure.query(() => listReviewCasesByType("agent_review")),
+    persistAgentDecision: adminProcedure.input(z.object({ agentType: z.string().min(2).max(80), caseId: z.number().int().positive().optional(), recommendation: z.string().min(2).max(80), confidence: z.number().min(0).max(1), modelVersion: z.string().max(80).optional(), requiresHuman: z.boolean().default(true), summary: z.string().min(3).max(2000) })).mutation(async ({ input, ctx }) => { const decisionId = await createAgentDecision({ agentType: input.agentType, caseId: input.caseId, recommendation: input.recommendation, confidence: String(input.confidence), modelVersion: input.modelVersion, requiresHuman: input.requiresHuman, persistedToReview: input.requiresHuman }); const caseId = input.requiresHuman && !input.caseId ? await createReviewCase({ caseType: "agent_review", severity: input.confidence < 0.5 ? "critical" : "high", summary: input.summary, source: input.agentType, assignedTo: null }) : input.caseId; await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "agent_decision.persist", resourceType: "agent_decision", resourceId: decisionId, metadata: JSON.stringify({ caseId, requiresHuman: input.requiresHuman }) }); return { decisionId, caseId } as const; }),
+    createSupportTicket: adminProcedure.input(z.object({ category: z.string().min(2).max(80), priority: z.enum(["normal", "high", "urgent"]).default("normal"), summary: z.string().min(3).max(2000), slaDueAt: z.coerce.date().optional() })).mutation(async ({ input, ctx }) => { if (input.slaDueAt && input.slaDueAt.getTime() <= Date.now()) throw new TRPCError({ code: "BAD_REQUEST", message: "SLA due time must be in the future" }); const id = await createSupportTicket({ ...input, status: "open", assignedTo: null }); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "support_ticket.create", resourceType: "support_ticket", resourceId: id }); return { id } as const; }),
+    createIncident: adminProcedure.input(z.object({ incidentType: z.string().min(2).max(80), severity: z.enum(["low", "medium", "high", "critical"]).default("high"), summary: z.string().min(3).max(2000), evidenceReference: z.string().max(1000).optional() })).mutation(async ({ input, ctx }) => { const id = await createIncidentRecord({ ...input, status: "open", ownerId: ctx.user.id, isFrozen: input.severity === "critical" }); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "incident.create", resourceType: "incident", resourceId: id }); return { id } as const; }),
+    updateSupportTicket: adminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["open", "assigned", "waiting", "escalated", "resolved"]).optional(), priority: z.enum(["normal", "high", "urgent"]).optional(), assignedTo: z.number().int().positive().nullable().optional(), slaDueAt: z.coerce.date().optional(), escalationReason: z.string().max(200).optional() })).mutation(async ({ input, ctx }) => { const { id, ...changes } = input; await updateSupportTicket(id, changes); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "support_ticket.update", resourceType: "support_ticket", resourceId: id }); return { success: true } as const; }),
+    updateIncident: adminProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["open", "contained", "resolved", "postmortem"]).optional(), severity: z.enum(["low", "medium", "high", "critical"]).optional(), ownerId: z.number().int().positive().nullable().optional(), isFrozen: z.boolean().optional(), evidenceReference: z.string().max(1000).optional(), escalationReason: z.string().max(200).optional() })).mutation(async ({ input, ctx }) => { const { id, ...changes } = input; await updateIncidentRecord(id, changes); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "incident.update", resourceType: "incident", resourceId: id }); return { success: true } as const; }),
     subscriptionPlans: adminProcedure.query(() => listSubscriptionPlans()),
     updateSubscriptionPlan: adminProcedure.input(z.object({ id: z.number().int().positive(), name: z.string().min(2).max(80).optional(), description: z.string().max(500).optional(), isActive: z.boolean().optional(), confirmation: z.literal("CONFIRM") })).mutation(async ({ input, ctx }) => { const { id, confirmation, ...changes } = input; void confirmation; await updateSubscriptionPlan(id, changes, ctx.user.id); return { success: true } as const; }),
     subscriptionEntitlementPreview: adminProcedure.input(z.object({ userId: z.number().int().positive(), planCode: z.enum(["free", "basic", "advanced"]), endsAt: z.coerce.date().optional() })).query(({ input }) => getSubscriptionEntitlementPreview(input.userId, input.planCode, input.endsAt)),
