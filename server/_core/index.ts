@@ -38,6 +38,7 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   validateStartupConfiguration();
   const app = express();
+  if (process.env.TRUST_PROXY === "true") app.set("trust proxy", true);
   const server = createServer(app);
   registerStorageProxy(app);
   registerOAuthRoutes(app);
@@ -47,6 +48,12 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "256kb", extended: true }));
   app.use("/api", (request, response, next) => {
     response.setHeader("X-NikahSaathi-API-Version", "1");
+    const forwardedProto = request.headers["x-forwarded-proto"];
+    const isHttps = request.protocol === "https" || (typeof forwardedProto === "string" && forwardedProto.split(",")[0]?.trim() === "https");
+    if (process.env.FORCE_HTTPS === "true" && !isHttps) {
+      const host = request.get("host");
+      return host ? response.redirect(308, `https://${host}${request.originalUrl}`) : response.status(400).json({ error: "HTTPS is required" });
+    }
     const requestedVersion = request.headers["x-nikahsaathi-api-version"];
     if (requestedVersion && requestedVersion !== "1") return response.status(400).json({ error: "Unsupported API version", supported: ["1"] });
     next();

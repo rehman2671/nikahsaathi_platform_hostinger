@@ -193,6 +193,6 @@
 
 ## GitHub export and transport configuration — 25 Aug 2026
 
-- [ ] Create a new private GitHub repository and push the validated NikahSaathi project without secrets or generated credentials.
-- [ ] Add configuration-driven HTTP/HTTPS deployment guidance: HTTP remains available during certificate setup, HTTPS is preferred when configured, and HTTP can later be disabled at the proxy/hosting layer.
-- [ ] Explain production choices in simple terms: final origins/TLS proxy, Telegram delivery idempotency, shared rate limiting, and retention-worker scheduling.
+- [x] Create a new private GitHub repository and push the validated NikahSaathi project without secrets or generated credentials. Private repository: `https://github.com/rehman2671/nikahsaathi_platform_v2`; the WebDev `origin` was preserved and the GitHub remote is `github`.
+- [x] Add configuration-driven HTTP/HTTPS deployment guidance: HTTP remains available during certificate setup, HTTPS is preferred when configured, and HTTP can later be disabled at the proxy/hosting layer. `FORCE_HTTPS` controls the 308 redirect, `TRUST_PROXY` enables trusted proxy protocol detection, and `DEPLOYMENT_SECURITY_RUNBOOK.md` documents the activation sequence.
+- [ ] Explain production choices in simple terms: final origins/TLS proxy, Telegram delivery idempotency, shared rate limiting, and retention-worker scheduling. `RELEASE_GATES.md` records the remaining owner inputs and closure criteria; a user-facing explanation is the next delivery step.

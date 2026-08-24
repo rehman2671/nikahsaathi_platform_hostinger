@@ -2,6 +2,8 @@
 
 ## Required production configuration
 
+During certificate setup, leave `FORCE_HTTPS=false` (or unset) so HTTP remains available. After the certificate and HTTPS proxy route are verified, set `FORCE_HTTPS=true` to return a `308` redirect for HTTP API requests. Set `TRUST_PROXY=true` only when the API is behind a trusted reverse proxy that sets `x-forwarded-proto`; otherwise leave it unset.
+
 Set `CORS_ALLOWED_ORIGINS` to a comma-separated allowlist containing only the deployed Flutter Web/site origins, for example `https://app.example.com,https://web.example.com`. Do not use `*` with credentials. Serve the API and cookie-authenticated web client over HTTPS so the double-submit CSRF cookie uses `SameSite=None; Secure`.
 
 ## Verification steps after deployment
@@ -12,5 +14,6 @@ Set `CORS_ALLOWED_ORIGINS` to a comma-separated allowlist containing only the de
 4. Send the same mutation with a matching `ns_csrf` cookie and `x-csrf-token` header and confirm the typed tRPC response.
 5. Send an `x-nikahsaathi-api-version: 2` request and confirm `400`; send no version or version `1` and confirm `X-NikahSaathi-API-Version: 1`.
 6. Confirm Bearer-authenticated Flutter requests continue without a browser CSRF token, while origin allowlisting still applies to browser cookie mutations.
+7. First validate with `FORCE_HTTPS=false`; then enable `FORCE_HTTPS=true` at the deployment environment and repeat the health/API checks over HTTPS. Disable the HTTP listener or redirect at the proxy only after the HTTPS path is confirmed.
 
 The repository contains local HTTP integration coverage for these boundaries. A deployed split-host run remains a release gate because it depends on the final API hostname, frontend hostname, TLS termination and proxy header behavior.
