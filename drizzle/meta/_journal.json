@@ -22,6 +22,13 @@
       "when": 1787529750810,
       "tag": "0002_useful_mongoose",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1787530681252,
+      "tag": "0003_boring_virginia_dare",
+      "breakpoints": true
     }
   ]
 }

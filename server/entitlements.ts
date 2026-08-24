@@ -1,5 +1,13 @@
 export type PlanCode = "free" | "basic" | "advanced";
 
+export type SubscriptionState = { planCode: PlanCode; status: "active" | "expired" | "cancelled"; endsAt?: Date | null };
+
+export function resolveEffectivePlan(subscription?: SubscriptionState, now = new Date()): PlanCode {
+  if (!subscription || subscription.status !== "active") return "free";
+  if (subscription.endsAt && subscription.endsAt.getTime() <= now.getTime()) return "free";
+  return subscription.planCode;
+}
+
 export type FieldPolicy = {
   fieldKey: string;
   freeAccess: boolean;

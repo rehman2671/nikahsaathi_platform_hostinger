@@ -43,3 +43,14 @@ The next implementation increment should add moderator assignment CRUD, a full C
 | Version | Date | Change | Owner |
 |---|---|---|---|
 | 1.2 | 24 Aug 2026 | Added shared Flutter contracts, blocked-domain enforcement contract, multi-membership APIs, queue-specific procedures, human-review persistence, high-risk approval policy, live audit access and plan visibility summary | Manus AI |
+
+### 20.5 Final foundation hardening
+
+| Gap closed | Implementation evidence |
+|---|---|
+| Server-derived subscription entitlements | `getEffectiveSubscription` joins active subscriptions to plan records; `resolveEffectivePlan` falls back to Free for missing, cancelled or expired subscriptions; `profileProjection` no longer accepts a client-provided plan. |
+| Subscription lifecycle audit | `changeUserSubscription` expires the previous active record, creates the new lifecycle record and writes `subscription.change` to `audit_logs`. |
+| Community-scoped moderator capability | `communityAccess` derives `canModerate` from the requesting user’s active assignment for that community; moderator assignment/removal is audited. |
+| Coming Soon member-list guard | `communityAccess` returns `canViewMembers: false`; `communityMembers` rejects non-active communities; `getCommunityPermissions` and tests cover the read-only rule. |
+
+Final verification after hardening: `pnpm check`, `pnpm test` and `pnpm build` pass. The test suite contains 6 files and 17 passing tests.

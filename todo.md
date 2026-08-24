@@ -28,7 +28,7 @@
 - [x] Implement field-level profile visibility projections for each plan.
 - [x] Enforce owner privacy, explicit consent, verification state, relationship state and safety policy as server-side overrides.
 - [x] Ensure private photos, contact details, exact location and hidden identity are never unlocked automatically by payment.
-- [ ] Add entitlement audit events and safe behavior for plan downgrade or expiry.
+- [x] Add entitlement audit events and safe behavior for plan downgrade or expiry.
 
 ## Platform-managed communities
 
@@ -36,8 +36,8 @@
 - [x] Restrict community creation, activation and category management to authorized platform roles.
 - [x] Support religion-first and country-later category rollout.
 - [x] Support multiple eligible community memberships per user.
-- [ ] Implement moderator assignment and community-level permissions.
-- [ ] Ensure Coming Soon communities are read-only without member lists or messaging.
+- [x] Implement moderator assignment and community-level permissions.
+- [x] Ensure Coming Soon communities are read-only without member lists or messaging.
 
 ## Review operations and human fallback
 
@@ -65,4 +65,4 @@
 - [x] Run typecheck, tests and production build.
 - [x] Capture desktop and responsive screenshots for visual verification.
 - [x] Update IMPLEMENTATION_MASTER_PLAN.md statuses and evidence.
-- [ ] Save a checkpoint after the foundation is complete.
+- [x] Save a checkpoint after the foundation is complete.

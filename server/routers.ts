@@ -5,18 +5,23 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { evaluateSafetyRules, findBlockedDomains, highestSafetyAction } from "./safetyEngine";
-import { projectProfile } from "./entitlements";
+import { projectProfile, resolveEffectivePlan } from "./entitlements";
 import { canExecuteApprovedAction } from "./approvalPolicy";
+import { getCommunityPermissions } from "./communityPolicy";
 import {
   createAuditLog,
   createCommunity,
+  assignCommunityModerator,
   createReviewCase,
   createSafetyRule,
   createSafetyRuleVersion,
+  getEffectiveSubscription,
   getOperationsCounts,
   joinCommunity,
   leaveCommunity,
   listCommunities,
+  listCommunityModerators,
+  listCommunityMembers,
   listAuditLogs,
   listBlockedDomains,
   listProfileFieldPolicies,
@@ -25,9 +30,11 @@ import {
   listSafetyRules,
   listUserMemberships,
   listSubscriptionPlans,
+  changeUserSubscription,
   recordHumanReview,
   rollbackSafetyRule,
   setCommunityStatus,
+  removeCommunityModerator,
   setSafetyRuleStatus,
 } from "./db";
 
@@ -118,6 +125,15 @@ export const appRouter = router({
         await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "community.status_change", resourceType: "community", resourceId: input.id, metadata: JSON.stringify({ status: input.status }) });
         return { success: true } as const;
       }),
+    communityAccess: protectedProcedure
+      .input(z.object({ communityId: z.number().int().positive() }))
+      .query(async ({ input, ctx }) => { const community = (await listCommunities()).find(item => item.id === input.communityId); const moderators = await listCommunityModerators(input.communityId); return getCommunityPermissions(community?.status, moderators.some(item => item.userId === ctx.user.id)); }),
+    communityMembers: protectedProcedure
+      .input(z.object({ communityId: z.number().int().positive() }))
+      .query(async ({ input }) => { const community = (await listCommunities()).find(item => item.id === input.communityId); if (community?.status !== "active") throw new TRPCError({ code: "FORBIDDEN", message: "Member lists are unavailable until this community is active" }); return listCommunityMembers(input.communityId); }),
+    communityModerators: adminProcedure.input(z.object({ communityId: z.number().int().positive() })).query(({ input }) => listCommunityModerators(input.communityId)),
+    assignCommunityModerator: adminProcedure.input(z.object({ communityId: z.number().int().positive(), userId: z.number().int().positive() })).mutation(async ({ input, ctx }) => { const id = await assignCommunityModerator(input.communityId, input.userId, ctx.user.id); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "community.moderator_assign", resourceType: "community", resourceId: input.communityId, metadata: JSON.stringify({ userId: input.userId }) }); return { id } as const; }),
+    removeCommunityModerator: adminProcedure.input(z.object({ id: z.number().int().positive(), communityId: z.number().int().positive() })).mutation(async ({ input, ctx }) => { await removeCommunityModerator(input.id, ctx.user.id); await createAuditLog({ actorType: "admin", actorId: ctx.user.id, action: "community.moderator_remove", resourceType: "community", resourceId: input.communityId, metadata: JSON.stringify({ moderatorId: input.id }) }); return { success: true } as const; }),
     myMemberships: protectedProcedure.query(({ ctx }) => listUserMemberships(ctx.user.id)),
     joinCommunity: protectedProcedure
       .input(z.object({ communityId: z.number().int().positive() }))
@@ -138,17 +154,17 @@ export const appRouter = router({
     incidentQueue: adminProcedure.query(() => listReviewCasesByType("incident")),
     agentReviewQueue: adminProcedure.query(() => listReviewCasesByType("agent_review")),
     subscriptionPlans: adminProcedure.query(() => listSubscriptionPlans()),
+    changeUserSubscription: adminProcedure.input(z.object({ userId: z.number().int().positive(), planCode: z.string().min(2).max(40), status: z.enum(["active", "expired", "cancelled"]), endsAt: z.coerce.date().optional(), changeReason: z.string().min(3).max(500) })).mutation(({ input, ctx }) => changeUserSubscription({ ...input, changedBy: ctx.user.id })),
     profileFieldPolicies: adminProcedure.query(() => listProfileFieldPolicies()),
     profileProjection: protectedProcedure
       .input(z.object({
         profile: z.record(z.string(), z.unknown()),
-        plan: z.enum(["free", "basic", "advanced"]),
         ownerConsent: z.record(z.string(), z.boolean().optional()),
         ownerPrivacy: z.record(z.string(), z.boolean().optional()),
         verificationState: z.enum(["unverified", "pending", "verified", "expired"]).optional(),
         relationshipState: z.enum(["none", "requested", "matched", "blocked"]).optional(),
       }))
-      .query(async ({ input }) => projectProfile(input.profile, await listProfileFieldPolicies(), input)),
+      .query(async ({ input, ctx }) => { const subscription = await getEffectiveSubscription(ctx.user.id); const plan = resolveEffectivePlan(subscription); return { plan, fields: projectProfile(input.profile, await listProfileFieldPolicies(), { ...input, plan }) }; }),
   }),
 });
 

@@ -5,12 +5,14 @@ import {
   blockedDomains,
   communities,
   communityMemberships,
+  communityModerators,
   humanReviews,
   profileFieldPolicies,
   reviewCases,
   safetyRuleVersions,
   safetyRules,
   subscriptionPlans,
+  userSubscriptions,
   InsertUser,
   users,
 } from "../drizzle/schema";
@@ -185,6 +187,38 @@ export async function listUserMemberships(userId: number) {
   return db.select().from(communityMemberships).where(eq(communityMemberships.userId, userId));
 }
 
+export async function assignCommunityModerator(communityId: number, userId: number, assignedBy: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const existing = await db.select().from(communityModerators).where(sql`${communityModerators.communityId} = ${communityId} AND ${communityModerators.userId} = ${userId}`).limit(1);
+  if (existing[0]) {
+    await db.update(communityModerators).set({ isActive: true, assignedBy }).where(eq(communityModerators.id, existing[0].id));
+    return existing[0].id;
+  }
+  const result = await db.insert(communityModerators).values({ communityId, userId, assignedBy, isActive: true });
+  return Number(result[0].insertId);
+}
+
+export async function listCommunityMembers(communityId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const community = await db.select({ status: communities.status }).from(communities).where(eq(communities.id, communityId)).limit(1);
+  if (community[0]?.status !== "active") throw new Error("Member lists are unavailable until a community is active");
+  return db.select({ id: communityMemberships.id, userId: communityMemberships.userId, joinedAt: communityMemberships.joinedAt }).from(communityMemberships).where(sql`${communityMemberships.communityId} = ${communityId} AND ${communityMemberships.status} = 'active'`);
+}
+
+export async function listCommunityModerators(communityId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(communityModerators).where(sql`${communityModerators.communityId} = ${communityId} AND ${communityModerators.isActive} = true`);
+}
+
+export async function removeCommunityModerator(id: number, assignedBy: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(communityModerators).set({ isActive: false, assignedBy }).where(eq(communityModerators.id, id));
+}
+
 export async function listReviewCases() {
   const db = await getDb();
   if (!db) return [];
@@ -209,6 +243,26 @@ export async function recordHumanReview(input: typeof humanReviews.$inferInsert)
   if (!db) throw new Error("Database is not available");
   await db.insert(humanReviews).values(input);
   if (input.caseId) await db.update(reviewCases).set({ status: "resolved", assignedTo: input.reviewerId ?? null }).where(eq(reviewCases.id, input.caseId));
+}
+
+export async function getEffectiveSubscription(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select({ planCode: subscriptionPlans.code, status: userSubscriptions.status, endsAt: userSubscriptions.endsAt }).from(userSubscriptions).innerJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id)).where(sql`${userSubscriptions.userId} = ${userId} AND ${userSubscriptions.status} = 'active'`).orderBy(desc(userSubscriptions.createdAt)).limit(1);
+  const current = rows[0];
+  if (!current || (current.endsAt && current.endsAt.getTime() <= Date.now())) return undefined;
+  return { planCode: current.planCode as "free" | "basic" | "advanced", status: current.status, endsAt: current.endsAt };
+}
+
+export async function changeUserSubscription(input: { userId: number; planCode: string; status: "active" | "expired" | "cancelled"; changedBy: number; endsAt?: Date; changeReason: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const plan = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.code, input.planCode)).limit(1);
+  if (!plan[0]) throw new Error("Subscription plan not found");
+  await db.update(userSubscriptions).set({ status: "expired", updatedAt: new Date(), changeReason: input.changeReason }).where(sql`${userSubscriptions.userId} = ${input.userId} AND ${userSubscriptions.status} = 'active'`);
+  const result = await db.insert(userSubscriptions).values({ userId: input.userId, planId: plan[0].id, status: input.status, changedBy: input.changedBy, endsAt: input.endsAt, changeReason: input.changeReason });
+  await createAuditLog({ actorType: "admin", actorId: input.changedBy, action: "subscription.change", resourceType: "user_subscription", resourceId: Number(result[0].insertId), metadata: JSON.stringify({ userId: input.userId, planCode: input.planCode, status: input.status, reason: input.changeReason }) });
+  return Number(result[0].insertId);
 }
 
 export async function listSubscriptionPlans() {

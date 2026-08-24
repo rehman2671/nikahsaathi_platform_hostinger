@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectProfile } from "./entitlements";
+import { projectProfile, resolveEffectivePlan } from "./entitlements";
 
 const policies = [
   { fieldKey: "displayName", freeAccess: true, basicAccess: true, advancedAccess: true, requiresOwnerConsent: false, isSensitive: false },
@@ -16,6 +16,13 @@ const profile = {
 };
 
 describe("profile entitlements", () => {
+  it("falls back to free when subscription is missing, cancelled or expired", () => {
+    const now = new Date("2026-08-24T00:00:00.000Z");
+    expect(resolveEffectivePlan(undefined, now)).toBe("free");
+    expect(resolveEffectivePlan({ planCode: "advanced", status: "cancelled", endsAt: null }, now)).toBe("free");
+    expect(resolveEffectivePlan({ planCode: "basic", status: "active", endsAt: new Date("2026-08-23T23:59:59.000Z") }, now)).toBe("free");
+    expect(resolveEffectivePlan({ planCode: "basic", status: "active", endsAt: new Date("2026-08-24T00:00:01.000Z") }, now)).toBe("basic");
+  });
   it("returns only fields allowed by the free plan", () => {
     expect(projectProfile(profile, policies, {
       plan: "free",

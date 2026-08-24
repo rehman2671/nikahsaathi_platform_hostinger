@@ -76,6 +76,19 @@ export const planEntitlements = mysqlTable("plan_entitlements", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+export const userSubscriptions = mysqlTable("user_subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  planId: int("planId").notNull(),
+  status: mysqlEnum("status", ["active", "expired", "cancelled"]).notNull().default("active"),
+  startsAt: timestamp("startsAt").defaultNow().notNull(),
+  endsAt: timestamp("endsAt"),
+  changedBy: int("changedBy"),
+  changeReason: text("changeReason"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
 export const profileFieldPolicies = mysqlTable("profile_field_policies", {
   id: int("id").autoincrement().primaryKey(),
   fieldKey: varchar("fieldKey", { length: 120 }).notNull().unique(),
