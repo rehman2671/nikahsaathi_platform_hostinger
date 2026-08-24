@@ -68,3 +68,6 @@ The continuation also added typed community eligibility evaluation for JSON and 
 
 
 The queue contract now has additive cursor-paginated endpoints with bounded page sizes (1–100) and typed status/severity filters, preserving the existing console list procedures for compatibility. A post-upgrade production audit shows 50 remaining advisories across 600 production dependencies: 1 critical, 8 high, 32 moderate and 9 low. Direct `axios` was upgraded from 1.12.2 to 1.19.0 and `nanoid` from 5.1.6 to 5.1.16; full tests and build still pass. P1-12 remains open because transitive advisories, including a critical finding, require a separate compatibility-led dependency maintenance release.
+
+
+The latest integrity pass added migration 0021 for `verification_submissions.reviewCaseId` after relocating the table declaration below `review_cases` to avoid a TypeScript initialization forward-reference. Orphan checks were zero before applying migrations 0019–0021. Post/comment/profile sanitized writes now combine persistence and their user-facing safety audit event in one transaction; messages already combine message insert and conversation timestamp update transactionally. Live HTTP coverage now includes a valid cookie-authenticated tRPC mutation with matching CSRF cookie/header on the local allowed origin.

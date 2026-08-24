@@ -1,6 +1,6 @@
 import express, { type Express, type Request, type Response } from "express";
 import { buildTelegramCommandResponse, parseTelegramCommand, redactTelegramText, telegramIntegrationStatus, verifyTelegramWebhookSecret } from "./telegramOps";
-import { claimTelegramUpdate, completeTelegramUpdate, createAuditLog, createReviewCase, failTelegramUpdate } from "./db";
+import { claimTelegramUpdate, completeTelegramUpdate, failTelegramUpdate, markTelegramMessageFailed, markTelegramMessageSent, stageTelegramHandoff } from "./db";
 import { createRateLimiter } from "./_core/rateLimit";
 
 const telegramWebhookRateLimiter = createRateLimiter({ windowMs: 60_000, max: 60, keyPrefix: "telegram-webhook" });
@@ -45,17 +45,17 @@ export function registerTelegramWebhookRoutes(app: Express) {
     if (!claimed) return response.json({ ok: true, duplicate: true });
 
     try {
-      let handoffCaseId: number | undefined;
-      if (command.kind === "open_admin_action") {
-        handoffCaseId = await createReviewCase({ caseType: "agent_review", severity: "critical", status: "open", subjectType: "review_case", subjectId: command.caseId, summary: `Telegram requested ${command.action} for Case #${command.caseId}`, source: "telegram", assignedTo: null });
-      }
-      const reply = handoffCaseId ? `${buildTelegramCommandResponse(command)} Handoff #${handoffCaseId} is now visible in Agent review.` : buildTelegramCommandResponse(command);
+      const previewReply = buildTelegramCommandResponse(command);
+      const staged = await stageTelegramHandoff({ updateId, operatorId, chatId, text: redactTelegramText(previewReply), command: command.kind, action: command.kind === "open_admin_action" ? command.action : undefined, caseId: command.kind === "open_admin_action" ? command.caseId : undefined });
+      const handoffCaseId = staged.handoffCaseId;
+      const reply = staged.text;
       const testDryRun = process.env.NODE_ENV === "development" && request.header("x-telegram-test-mode") === "true";
-      if (!testDryRun) await sendTelegramMessage(chatId, reply);
-      await createAuditLog({ actorType: "telegram", action: `telegram.${command.kind}`, resourceType: "telegram_update", resourceId: handoffCaseId, metadata: JSON.stringify({ updateId, operatorId, handoffCaseId }) });
+      if (!staged.alreadySent && !testDryRun) await sendTelegramMessage(chatId, reply);
+      if (!staged.alreadySent) await markTelegramMessageSent(updateId);
       await completeTelegramUpdate(updateId);
-      return response.json({ ok: true, handled: true, handoffCaseId });
+      return response.json({ ok: true, handled: true, handoffCaseId, duplicateDeliveryPrevented: staged.alreadySent });
     } catch (error) {
+      try { await markTelegramMessageFailed(updateId, error); } catch { /* receipt failure remains authoritative */ }
       await failTelegramUpdate(updateId, error);
       return response.status(500).json({ ok: false, retry: true });
     }

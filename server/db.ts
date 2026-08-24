@@ -20,6 +20,7 @@ import {
   supportTickets,
   incidentRecords,
   telegramUpdateReceipts,
+  telegramMessageOutbox,
   safetyRuleVersions,
   safetyRules,
   subscriptionPlans,
@@ -407,6 +408,51 @@ export async function claimTelegramUpdate(input: typeof telegramUpdateReceipts.$
   return true;
 }
 
+export async function stageTelegramHandoff(input: { updateId: string; operatorId: string; chatId: string; text: string; command: string; action?: string; caseId?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  return db.transaction(async tx => {
+    const existing = await tx.select({ id: telegramMessageOutbox.id, status: telegramMessageOutbox.status, text: telegramMessageOutbox.text }).from(telegramMessageOutbox).where(eq(telegramMessageOutbox.updateId, input.updateId)).limit(1);
+    if (existing[0]) {
+      await tx.update(telegramUpdateReceipts).set({ status: existing[0].status === "sent" ? "processed" : "processing", processedAt: existing[0].status === "sent" ? new Date() : null, lastError: null, nextAttemptAt: null }).where(eq(telegramUpdateReceipts.updateId, input.updateId));
+      return { handoffCaseId: undefined, alreadySent: existing[0].status === "sent", text: existing[0].text } as const;
+    }
+    let handoffCaseId: number | undefined;
+    if (input.action && input.caseId) {
+      const inserted = await tx.insert(reviewCases).values({ caseType: "agent_review", severity: "critical", status: "open", subjectType: "review_case", subjectId: input.caseId, summary: `Telegram requested ${input.action} for Case #${input.caseId}`, source: "telegram", assignedTo: null });
+      handoffCaseId = Number(inserted[0].insertId);
+    }
+    const stagedText = handoffCaseId ? `${input.text} Handoff #${handoffCaseId} is now visible in Agent review.` : input.text;
+    await tx.insert(telegramMessageOutbox).values({ updateId: input.updateId, chatId: input.chatId, text: stagedText, status: "pending", attempts: 0 });
+    await tx.insert(auditLogs).values({ actorType: "telegram", action: `telegram.${input.command}`, resourceType: "telegram_update", resourceId: handoffCaseId, metadata: JSON.stringify({ updateId: input.updateId, operatorId: input.operatorId, handoffCaseId, outbox: true }) });
+    await tx.update(telegramUpdateReceipts).set({ status: "processing", lastError: null, nextAttemptAt: null }).where(eq(telegramUpdateReceipts.updateId, input.updateId));
+    return { handoffCaseId, alreadySent: false, text: stagedText } as const;
+  });
+}
+export async function enqueueTelegramMessage(input: typeof telegramMessageOutbox.$inferInsert) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const existing = await db.select({ id: telegramMessageOutbox.id }).from(telegramMessageOutbox).where(eq(telegramMessageOutbox.updateId, input.updateId)).limit(1);
+  if (existing[0]) {
+    await db.update(telegramMessageOutbox).set({ chatId: input.chatId, text: input.text, status: "pending", lastError: null, nextAttemptAt: null }).where(eq(telegramMessageOutbox.id, existing[0].id));
+    return existing[0].id;
+  }
+  const result = await db.insert(telegramMessageOutbox).values(input);
+  return Number(result[0].insertId);
+}
+export async function markTelegramMessageSent(updateId: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(telegramMessageOutbox).set({ status: "sent", sentAt: new Date(), nextAttemptAt: null }).where(eq(telegramMessageOutbox.updateId, updateId));
+}
+export async function markTelegramMessageFailed(updateId: string, error: unknown) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const current = await db.select({ attempts: telegramMessageOutbox.attempts }).from(telegramMessageOutbox).where(eq(telegramMessageOutbox.updateId, updateId)).limit(1);
+  const attempts = (current[0]?.attempts ?? 0) + 1;
+  const terminal = attempts >= 5;
+  await db.update(telegramMessageOutbox).set({ status: terminal ? "dead_letter" : "failed", attempts, lastError: String(error instanceof Error ? error.message : error).slice(0, 1000), nextAttemptAt: terminal ? null : new Date(Date.now() + Math.min(60_000, attempts * 10_000)) }).where(eq(telegramMessageOutbox.updateId, updateId));
+}
 export async function completeTelegramUpdate(updateId: string) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");

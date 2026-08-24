@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listReviewCasesByType } from "./db";
+import { listReviewCasesByType, markTelegramMessageSent, stageTelegramHandoff } from "./db";
 
 describe("Telegram webhook secret", () => {
   it("rejects webhook POSTs without the configured secret", async () => {
@@ -29,6 +29,16 @@ describe("Telegram webhook secret", () => {
     const cases = await listReviewCasesByType("agent_review");
     expect(cases.some(item => item.id === payload.handoffCaseId && item.source === "telegram")).toBe(true);
   }, 15_000);
+
+  it("reuses a sent outbox row on redelivery without creating a second handoff", async () => {
+    const updateId = `outbox-${Date.now()}`;
+    const first = await stageTelegramHandoff({ updateId, operatorId: "1", chatId: "1", text: "handoff", command: "open_admin_action", action: "permanent_ban", caseId: 7 });
+    expect(first.alreadySent).toBe(false);
+    await markTelegramMessageSent(updateId);
+    const second = await stageTelegramHandoff({ updateId, operatorId: "1", chatId: "1", text: "handoff", command: "open_admin_action", action: "permanent_ban", caseId: 7 });
+    expect(second.alreadySent).toBe(true);
+    expect(second.text).toBe(first.text);
+  });
 
   it("accepts a signed harmless update without creating a command", async () => {
     const secret = process.env.TELEGRAM_WEBHOOK_SECRET;

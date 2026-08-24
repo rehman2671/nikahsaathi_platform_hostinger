@@ -413,6 +413,21 @@ export const telegramUpdateReceipts = mysqlTable("telegram_update_receipts", {
   processedAt: timestamp("processedAt"),
 });
 
+export const telegramMessageOutbox = mysqlTable("telegram_message_outbox", {
+  id: int("id").autoincrement().primaryKey(),
+  updateId: varchar("updateId", { length: 64 }).notNull().unique(),
+  chatId: varchar("chatId", { length: 64 }).notNull(),
+  text: text("text").notNull(),
+  status: mysqlEnum("status", ["pending", "sending", "sent", "failed", "dead_letter"]).notNull().default("pending"),
+  attempts: int("attempts").notNull().default(0),
+  lastError: text("lastError"),
+  nextAttemptAt: timestamp("nextAttemptAt"),
+  sentAt: timestamp("sentAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  outboxStatusIndex: index("telegram_outbox_status_next_attempt_idx").on(table.status, table.nextAttemptAt),
+}));
+
 export const auditLogs = mysqlTable("audit_logs", {
   id: int("id").autoincrement().primaryKey(),
   actorType: varchar("actorType", { length: 40 }).notNull(),
