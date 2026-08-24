@@ -1,0 +1,2 @@
+ALTER TABLE `user_reports` ADD `idempotencyKey` varchar(96);--> statement-breakpoint
+ALTER TABLE `user_reports` ADD CONSTRAINT `user_reports_reporter_idempotency_uq` UNIQUE(`reporterUserId`,`idempotencyKey`);

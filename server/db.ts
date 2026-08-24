@@ -1033,15 +1033,20 @@ export async function revokeUserBlock(blockerUserId: number, blockedUserId: numb
   assertMutationChanged(result, "User block");
 }
 
-export async function createUserReport(input: { reporterUserId: number; reportedUserId: number; reportType: typeof userReports.$inferInsert["reportType"]; details?: string }) {
+export async function createUserReport(input: { reporterUserId: number; reportedUserId: number; reportType: typeof userReports.$inferInsert["reportType"]; details?: string; idempotencyKey?: string }) {
   if (input.reporterUserId === input.reportedUserId) throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot report yourself" });
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
   return db.transaction(async tx => {
+    const idempotencyKey = input.idempotencyKey?.trim() || undefined;
+    if (idempotencyKey) {
+      const existing = await tx.select({ reportId: userReports.id, reviewCaseId: userReports.reviewCaseId }).from(userReports).where(and(eq(userReports.reporterUserId, input.reporterUserId), eq(userReports.idempotencyKey, idempotencyKey))).limit(1);
+      if (existing[0]) return { reportId: existing[0].reportId, reviewCaseId: existing[0].reviewCaseId ?? 0, idempotentReplay: true };
+    }
     const review = await tx.insert(reviewCases).values({ caseType: "moderation", severity: input.reportType === "scam" || input.reportType === "unsafe_behavior" ? "high" : "medium", subjectType: "user", subjectId: input.reportedUserId, summary: input.details?.trim() || `User report: ${input.reportType}`, source: "user_report", assignedTo: null });
     const reviewCaseId = Number(review[0].insertId);
-    const report = await tx.insert(userReports).values({ ...input, details: input.details?.trim() || null, reviewCaseId, status: "open" });
-    return { reportId: Number(report[0].insertId), reviewCaseId };
+    const report = await tx.insert(userReports).values({ reporterUserId: input.reporterUserId, reportedUserId: input.reportedUserId, reportType: input.reportType, details: input.details?.trim() || null, idempotencyKey: idempotencyKey ?? null, reviewCaseId, status: "open" });
+    return { reportId: Number(report[0].insertId), reviewCaseId, idempotentReplay: false };
   });
 }
 

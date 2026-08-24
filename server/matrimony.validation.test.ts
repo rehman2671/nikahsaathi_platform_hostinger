@@ -32,6 +32,11 @@ describe("matrimony invariants", () => {
     await expect(caller.matrimony.reportUser({ userId: 42, reportType: "other" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
+  it("rejects malformed report idempotency keys at the contract boundary", async () => {
+    const caller = appRouter.createCaller(userContext());
+    await expect(caller.matrimony.reportUser({ userId: 43, reportType: "other", requestId: "short" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("rejects malformed interest and provider input at the contract boundary", async () => {
     const caller = appRouter.createCaller(userContext());
     await expect(caller.matrimony.replaceMyInterests({ interestKeys: [""] })).rejects.toMatchObject({ code: "BAD_REQUEST" });

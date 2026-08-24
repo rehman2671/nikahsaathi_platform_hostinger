@@ -131,11 +131,13 @@ export const userReports = mysqlTable("user_reports", {
   details: text("details"),
   status: mysqlEnum("status", ["open", "reviewing", "resolved", "dismissed"]).notNull().default("open"),
   reviewCaseId: int("reviewCaseId"),
+  idempotencyKey: varchar("idempotencyKey", { length: 96 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, table => ({
   reporterIndex: index("user_reports_reporter_created_idx").on(table.reporterUserId, table.createdAt),
   reportedIndex: index("user_reports_reported_status_idx").on(table.reportedUserId, table.status, table.createdAt),
+  reporterIdempotencyUnique: uniqueIndex("user_reports_reporter_idempotency_uq").on(table.reporterUserId, table.idempotencyKey),
 }));
 
 export const profilePhotos = mysqlTable("profile_photos", {
