@@ -45,6 +45,12 @@ async function startServer() {
   // User media uploads use presigned storage URLs; API bodies stay intentionally small.
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ limit: "256kb", extended: true }));
+  app.use("/api", (request, response, next) => {
+    response.setHeader("X-NikahSaathi-API-Version", "1");
+    const requestedVersion = request.headers["x-nikahsaathi-api-version"];
+    if (requestedVersion && requestedVersion !== "1") return response.status(400).json({ error: "Unsupported API version", supported: ["1"] });
+    next();
+  });
   app.use("/api/trpc", createRateLimiter({ windowMs: 60_000, max: 120, keyPrefix: "trpc" }));
   app.use("/api/trpc", (request, response, next) => {
     const corsApplied = applyCorsHeaders(request, (name, value) => response.setHeader(name, value));

@@ -5,6 +5,13 @@ const baseUrl = "http://127.0.0.1:3000/api/trpc/auth.me";
 const mutationUrl = "http://127.0.0.1:3000/api/trpc/matrimony.replaceMyInterests";
 
 describe("live HTTP security boundary", () => {
+  it("advertises API v1 and rejects unsupported requested versions", async () => {
+    const live = await fetch("http://127.0.0.1:3000/api/health/live");
+    expect(live.status).toBe(200);
+    expect(live.headers.get("x-nikahsaathi-api-version")).toBe("1");
+    const unsupported = await fetch("http://127.0.0.1:3000/api/health/live", { headers: { "x-nikahsaathi-api-version": "2" } });
+    expect(unsupported.status).toBe(400);
+  });
   it("answers same-host CORS preflight with credential headers", async () => {
     const response = await fetch(baseUrl, { method: "OPTIONS", headers: { origin: "http://127.0.0.1:3000", "access-control-request-method": "POST" } });
     expect(response.status).toBe(204);
