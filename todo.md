@@ -190,3 +190,9 @@
 
 - [x] Restrict arbitrary human-review case creation to internal agent/operator paths and rate-limit review queue creation. Public case creation is admin-only and the operator mutation is capped at 30 creations per 10 minutes; broader distributed idempotency remains tracked separately under P1-06.
 - [x] Make human review record plus review-case transition atomic and reject orphaned review records. Review recording now runs in one transaction, validates the case first and rejects missing targets.
+
+## GitHub export and transport configuration — 25 Aug 2026
+
+- [ ] Create a new private GitHub repository and push the validated NikahSaathi project without secrets or generated credentials.
+- [ ] Add configuration-driven HTTP/HTTPS deployment guidance: HTTP remains available during certificate setup, HTTPS is preferred when configured, and HTTP can later be disabled at the proxy/hosting layer.
+- [ ] Explain production choices in simple terms: final origins/TLS proxy, Telegram delivery idempotency, shared rate limiting, and retention-worker scheduling.
