@@ -139,3 +139,25 @@
 - [x] Run a Flutter compile-equivalent validation for this package and document the result.
 - [x] Persist and render dedicated evidence metadata for moderation/verification case detail panels.
 - [x] Add a signed Telegram `/action` webhook POST test that verifies the persisted handoff response. The signed POST boundary and handoff path are covered; persistence is exercised by the server path and database-backed implementation.
+
+## Core backend audit remediation gates — 25 Aug 2026
+
+- [ ] P0-01: Add user profiles, profile lifecycle, photos, discovery, interests, matches, blocks, reports and verification submissions.
+- [ ] P0-02: Seed/version baseline safety rules and plan entitlements; add readiness validation for missing mandatory policy data.
+- [ ] P0-03: Add server-authoritative post/comment/message/profile write procedures invoking safety decisions transactionally.
+- [ ] P0-04: Add authenticated, ownership-aware storage metadata and signed URL authorization for private/restricted media.
+- [ ] P0-05: Add split-origin CORS, credential policy, CSRF/origin protection and deployment integration tests.
+- [ ] P0-06: Reconcile TypeScript/Dart safety response contracts, including risk and masking fields.
+- [ ] P1-01: Enforce typed community eligibility, verification and membership rules server-side.
+- [ ] P1-02: Make subscription changes transactional and enforce one active entitlement per user.
+- [ ] P1-03: Add foreign keys, composite unique constraints and lifecycle indexes.
+- [ ] P1-04: Make mutations return NOT_FOUND on stale IDs and audit only successful transitions.
+- [ ] P1-05: Add Telegram receipt states, retries/dead-letter handling and atomic handoff/outbox behavior.
+- [ ] P1-06: Add rate limits, quotas and mutation idempotency for user, operator and webhook paths.
+- [ ] P1-07: Fix safety source-span masking, rule-specific normalization and regex resource limits.
+- [ ] P1-08: Unify high-risk confirmation token across runtime, UI, Telegram and shared contracts.
+- [ ] P1-09: Add startup env validation and safe readiness checks.
+- [ ] P1-10: Reduce global body limits and apply route-specific webhook limits.
+- [ ] P1-11: Add cursor pagination, queue filters and production indexes.
+- [ ] P1-12: Remediate or formally triage 81 production dependency vulnerabilities.
+- [ ] P2: Add versioned public API contracts, retention/deletion policy, health checks and reproducible Flutter CI.
