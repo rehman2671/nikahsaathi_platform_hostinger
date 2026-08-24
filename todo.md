@@ -160,7 +160,7 @@
 - [x] P1-10: Reduce global body limits and apply route-specific webhook limits. API body defaults are reduced to 1 MB JSON/256 KB form payloads; Telegram uses the reduced boundary.
 - [x] P1-11: Add cursor pagination, queue filters and production indexes. Additive review-queue page procedures now support bounded cursors plus typed status/severity filters; existing indexes and lifecycle ordering are preserved.
 - [x] P1-12: Remediate or formally triage production dependency vulnerabilities. Direct axios/nanoid upgrades were retained; `DEPENDENCY_AUDIT_TRIAGE.md` now contains a generated package-family ledger with severity, representative affected paths, runtime/dev impact, explicit owner, decision and target date. A post-ledger `pnpm audit --json` rerun is stable at 3 critical, 37 high, 59 moderate and 10 low; unresolved runtime findings remain release-blocking.
-- [ ] P2: Add versioned public API contracts, retention/deletion policy, health checks and reproducible Flutter CI.
+- [ ] P2: Add versioned public API contracts, retention/deletion policy, health checks and reproducible Flutter CI. `API_CONTRACTS_V1.md`, `RETENTION_AND_DELETION_POLICY.md` and `.github/workflows/flutter.yml` are now present; live health endpoints and Flutter compile-smoke already exist. Automated retention/deletion worker, external CI execution and versioned API runtime negotiation remain pending.
 
 ## Product-domain continuation — 25 Aug 2026
 

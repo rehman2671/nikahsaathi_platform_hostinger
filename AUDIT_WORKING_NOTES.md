@@ -71,3 +71,6 @@ The queue contract now has additive cursor-paginated endpoints with bounded page
 
 
 The latest integrity pass added migration 0021 for `verification_submissions.reviewCaseId` after relocating the table declaration below `review_cases` to avoid a TypeScript initialization forward-reference. Orphan checks were zero before applying migrations 0019–0021. Post/comment/profile sanitized writes now combine persistence and their user-facing safety audit event in one transaction; messages already combine message insert and conversation timestamp update transactionally. Live HTTP coverage now includes a valid cookie-authenticated tRPC mutation with matching CSRF cookie/header on the local allowed origin.
+
+
+The Telegram outbox follow-up added migration 0022 and an idempotent `stageTelegramHandoff` transaction. The transaction now reuses an existing outbox row before creating another review case, stages the reply/audit/receipt processing state together, and returns stored text on redelivery. A regression test exercises sent-row reuse. The remaining unavoidable boundary is external provider acknowledgement versus the later local `markSent` write; this remains open until a provider-supported idempotency key or delivery receipt is available.
