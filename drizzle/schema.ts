@@ -1,5 +1,6 @@
 import {
   boolean,
+  bigint,
   int,
   mysqlEnum,
   mysqlTable,
@@ -440,6 +441,16 @@ export const auditLogs = mysqlTable("audit_logs", {
   metadata: text("metadata"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
+
+export const rateLimitBuckets = mysqlTable("rate_limit_buckets", {
+  bucketKey: varchar("bucketKey", { length: 220 }).primaryKey(),
+  windowStartedAt: bigint("windowStartedAt", { mode: "number" }).notNull(),
+  requestCount: int("requestCount").notNull().default(0),
+  expiresAt: bigint("expiresAt", { mode: "number" }).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  expiryIndex: index("rate_limit_buckets_expires_idx").on(table.expiresAt),
+}));
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;

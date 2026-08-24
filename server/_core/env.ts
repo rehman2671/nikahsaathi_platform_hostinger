@@ -1,5 +1,13 @@
 export const ENV = {
   appId: process.env.VITE_APP_ID ?? "",
+  appTitle: process.env.VITE_APP_TITLE?.trim() || "NikahSaathi Platform",
+  appShortName: process.env.VITE_APP_TITLE?.trim() || "NikahSaathi",
+  allowedOrigins: (process.env.CORS_ALLOWED_ORIGINS ?? "").split(",").map(value => value.trim()).filter(Boolean),
+  forceHttps: process.env.FORCE_HTTPS === "true",
+  trustProxy: process.env.TRUST_PROXY === "true",
+  sharedRateLimitEnabled: process.env.SHARED_RATE_LIMIT_ENABLED !== "false",
+  retentionWorkerEnabled: process.env.RETENTION_WORKER_ENABLED === "true",
+  retentionLegalHold: process.env.RETENTION_LEGAL_HOLD === "true",
   cookieSecret: process.env.JWT_SECRET ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",

@@ -9,6 +9,8 @@ import { startLogin } from "./const";
 import "./index.css";
 
 const queryClient = new QueryClient();
+const configuredAppTitle = import.meta.env.VITE_APP_TITLE?.trim() || "NikahSaathi Platform";
+document.title = configuredAppTitle;
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;

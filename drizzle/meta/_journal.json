@@ -169,6 +169,13 @@
       "when": 1787606506678,
       "tag": "0023_silly_green_goblin",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1787610345615,
+      "tag": "0024_mysterious_wrecker",
+      "breakpoints": true
     }
   ]
 }

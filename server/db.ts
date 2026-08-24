@@ -21,6 +21,7 @@ import {
   incidentRecords,
   telegramUpdateReceipts,
   telegramMessageOutbox,
+  rateLimitBuckets,
   safetyRuleVersions,
   safetyRules,
   subscriptionPlans,
@@ -39,12 +40,43 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { canJoinCommunity, getCommunityPermissions, parseCommunityEligibility } from "./communityPolicy";
+import { applySafetyDecision, evaluateSafetyRules, findBlockedDomains, type ContentSurface } from "./safetyEngine";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
 function assertMutationChanged(result: unknown, resource: string) {
   const affectedRows = Number((result as [{ affectedRows?: number }])?.[0]?.affectedRows ?? 0);
   if (affectedRows < 1) throw new TRPCError({ code: "NOT_FOUND", message: `${resource} was not found or did not change` });
+}
+
+export async function runRetentionSweep(input: { dryRun: boolean; maxRows: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const maxRows = Math.min(Math.max(Math.floor(input.maxRows), 1), 5000);
+  const outboxCutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const [expiredBuckets, processedOutbox, processedReceipts] = await Promise.all([
+    db.select({ bucketKey: rateLimitBuckets.bucketKey }).from(rateLimitBuckets).where(lt(rateLimitBuckets.expiresAt, Date.now())).limit(maxRows),
+    db.select({ id: telegramMessageOutbox.id }).from(telegramMessageOutbox).where(and(lt(telegramMessageOutbox.createdAt, outboxCutoff), or(eq(telegramMessageOutbox.status, "sent"), eq(telegramMessageOutbox.status, "dead_letter")))).limit(maxRows),
+    db.select({ updateId: telegramUpdateReceipts.updateId }).from(telegramUpdateReceipts).where(and(eq(telegramUpdateReceipts.status, "processed"), lt(telegramUpdateReceipts.processedAt, outboxCutoff))).limit(maxRows),
+  ]);
+  if (input.dryRun) return { dryRun: true, deleted: { rateLimitBuckets: 0, telegramOutbox: 0, telegramReceipts: 0 }, candidates: { rateLimitBuckets: expiredBuckets.length, telegramOutbox: processedOutbox.length, telegramReceipts: processedReceipts.length } };
+  if (expiredBuckets.length) await db.delete(rateLimitBuckets).where(lt(rateLimitBuckets.expiresAt, Date.now())).limit(maxRows);
+  if (processedOutbox.length) await db.delete(telegramMessageOutbox).where(and(lt(telegramMessageOutbox.createdAt, outboxCutoff), or(eq(telegramMessageOutbox.status, "sent"), eq(telegramMessageOutbox.status, "dead_letter")))).limit(maxRows);
+  if (processedReceipts.length) await db.delete(telegramUpdateReceipts).where(and(eq(telegramUpdateReceipts.status, "processed"), lt(telegramUpdateReceipts.processedAt, outboxCutoff))).limit(maxRows);
+  return { dryRun: false, deleted: { rateLimitBuckets: expiredBuckets.length, telegramOutbox: processedOutbox.length, telegramReceipts: processedReceipts.length }, candidates: { rateLimitBuckets: expiredBuckets.length, telegramOutbox: processedOutbox.length, telegramReceipts: processedReceipts.length } };
+}
+
+export async function consumeSharedRateLimit(input: { bucketKey: string; windowMs: number; max: number }) {
+  const db = await getDb();
+  if (!db) return null;
+  const now = Date.now();
+  const windowStartedAt = now - (now % input.windowMs);
+  const expiresAt = windowStartedAt + input.windowMs;
+  await db.execute(sql`INSERT INTO rate_limit_buckets (bucketKey, windowStartedAt, requestCount, expiresAt) VALUES (${input.bucketKey}, ${windowStartedAt}, 1, ${expiresAt}) ON DUPLICATE KEY UPDATE requestCount = IF(windowStartedAt = VALUES(windowStartedAt), requestCount + 1, 1), windowStartedAt = VALUES(windowStartedAt), expiresAt = VALUES(expiresAt)`);
+  const rows = await db.select({ requestCount: rateLimitBuckets.requestCount, expiresAt: rateLimitBuckets.expiresAt }).from(rateLimitBuckets).where(eq(rateLimitBuckets.bucketKey, input.bucketKey)).limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return { allowed: row.requestCount <= input.max, count: row.requestCount, retryAfterSeconds: Math.max(1, Math.ceil((Number(row.expiresAt) - now) / 1000)) };
 }
 
 export async function getDb() {
@@ -780,6 +812,89 @@ export async function createMediaAsset(input: typeof mediaAssets.$inferInsert) {
   return Number(result[0].insertId);
 }
 
+
+async function evaluateSafetyInsideTransaction(tx: any, text: string, surface: ContentSurface) {
+  const [rules, domains] = await Promise.all([
+    tx.select().from(safetyRules).where(eq(safetyRules.isActive, true)),
+    tx.select().from(blockedDomains).where(eq(blockedDomains.isActive, true)),
+  ]);
+  const matches = evaluateSafetyRules(text, surface, rules);
+  const blockedUrls = findBlockedDomains(text, domains.map((domain: { domain: string }) => domain.domain));
+  const decision = applySafetyDecision(text, matches, blockedUrls);
+  if (!decision.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: decision.explanation ?? `This ${surface} cannot be shared` });
+  return { matches, blockedUrls, decision };
+}
+
+export async function createPostWithSafetyAudit(input: typeof posts.$inferInsert, audit: Omit<typeof auditLogs.$inferInsert, "resourceId">, originalText: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  return db.transaction(async tx => {
+    const safety = await evaluateSafetyInsideTransaction(tx, originalText, "posts");
+    const result = await tx.insert(posts).values({ ...input, body: safety.decision.safeText ?? originalText });
+    const postId = Number(result[0].insertId);
+    await tx.insert(auditLogs).values({ ...audit, resourceId: postId, metadata: JSON.stringify({ source: audit.metadata, safetyAction: safety.decision.action, policySnapshot: true }) });
+    return { postId, ...safety };
+  });
+}
+
+export async function createCommentWithSafetyAudit(input: typeof comments.$inferInsert, audit: Omit<typeof auditLogs.$inferInsert, "resourceId">, originalText: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  return db.transaction(async tx => {
+    const post = await tx.select({ id: posts.id, status: posts.status }).from(posts).where(eq(posts.id, input.postId)).limit(1);
+    if (!post[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Post not found" });
+    if (post[0].status !== "published") throw new TRPCError({ code: "FORBIDDEN", message: "Comments are unavailable on this post" });
+    const safety = await evaluateSafetyInsideTransaction(tx, originalText, "comments");
+    const result = await tx.insert(comments).values({ ...input, body: safety.decision.safeText ?? originalText });
+    const commentId = Number(result[0].insertId);
+    await tx.insert(auditLogs).values({ ...audit, resourceId: commentId, metadata: JSON.stringify({ source: audit.metadata, safetyAction: safety.decision.action, policySnapshot: true }) });
+    return { commentId, ...safety };
+  });
+}
+
+export async function createMessageWithSafetyAudit(userId: number, conversationId: number, originalText: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  return db.transaction(async tx => {
+    const conversation = await tx.select({ id: conversations.id, status: conversations.status }).from(conversations).where(and(eq(conversations.id, conversationId), or(eq(conversations.userAId, userId), eq(conversations.userBId, userId)))).limit(1);
+    if (!conversation[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Conversation was not found" });
+    if (conversation[0].status !== "active") throw new TRPCError({ code: "FORBIDDEN", message: "Conversation is closed" });
+    const safety = await evaluateSafetyInsideTransaction(tx, originalText, "messages");
+    const result = await tx.insert(messages).values({ conversationId, senderId: userId, body: safety.decision.safeText ?? originalText, status: "published" });
+    const messageId = Number(result[0].insertId);
+    await tx.insert(auditLogs).values({ actorType: "user", actorId: userId, action: "message.create", resourceType: "message", resourceId: messageId, metadata: JSON.stringify({ conversationId, safetyAction: safety.decision.action, policySnapshot: true }) });
+    await tx.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, conversationId));
+    return { messageId, ...safety };
+  });
+}
+
+export async function upsertUserProfileWithSafetyAudit(userId: number, input: Partial<typeof profiles.$inferInsert>, textFields: readonly string[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  return db.transaction(async tx => {
+    const safeValues: Record<string, unknown> = { ...input };
+    const safetyAudits: Array<Omit<typeof auditLogs.$inferInsert, "resourceId">> = [];
+    for (const field of textFields) {
+      const value = input[field as keyof typeof input];
+      if (typeof value !== "string") continue;
+      const safety = await evaluateSafetyInsideTransaction(tx, value, "profiles");
+      safeValues[field] = safety.decision.safeText ?? value;
+      if (safety.decision.action !== "allow") safetyAudits.push({ actorType: "user", actorId: userId, action: "profile.content_sanitized", resourceType: "profile", metadata: JSON.stringify({ field, action: safety.decision.action, policySnapshot: true }) });
+    }
+    const existing = await tx.select({ id: profiles.id }).from(profiles).where(eq(profiles.userId, userId)).limit(1);
+    let profileId: number;
+    if (existing[0]) {
+      const result = await tx.update(profiles).set(safeValues).where(eq(profiles.id, existing[0].id));
+      assertMutationChanged(result, "Profile");
+      profileId = existing[0].id;
+    } else {
+      const result = await tx.insert(profiles).values({ userId, ...safeValues });
+      profileId = Number(result[0].insertId);
+    }
+    if (safetyAudits.length) await tx.insert(auditLogs).values(safetyAudits.map(audit => ({ ...audit, resourceId: profileId })));
+    return { profileId, safetyAudits };
+  });
+}
 
 export async function createPost(input: typeof posts.$inferInsert) {
   const db = await getDb();

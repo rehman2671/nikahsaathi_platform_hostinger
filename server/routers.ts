@@ -57,8 +57,11 @@ import {
   createMediaAsset,
   createPost,
   createPostWithAudit,
+  createPostWithSafetyAudit,
   createComment,
   createCommentWithAudit,
+  createCommentWithSafetyAudit,
+  createMessageWithSafetyAudit,
   getPost,
   listCommunityPosts,
   listPostComments,
@@ -72,6 +75,7 @@ import {
   updateProfileFieldPolicy,
   upsertUserProfile,
   upsertUserProfileWithAudit,
+  upsertUserProfileWithSafetyAudit,
   getUserProfile,
   listUserInterests,
   replaceUserInterests,
@@ -198,13 +202,8 @@ export const appRouter = router({
     myConversations: protectedProcedure.query(({ ctx }) => listUserConversations(ctx.user.id)),
     conversationMessages: protectedProcedure.input(z.object({ conversationId: z.number().int().positive() })).query(({ input, ctx }) => listConversationMessages(ctx.user.id, input.conversationId)),
     sendMessage: protectedProcedure.input(z.object({ conversationId: z.number().int().positive(), body: z.string().trim().min(1).max(5000) })).mutation(async ({ input, ctx }) => {
-      const [rules, domains] = await Promise.all([listSafetyRules(), listBlockedDomains()]);
-      const matches = evaluateSafetyRules(input.body, "messages", rules);
-      const blockedUrls = findBlockedDomains(input.body, domains.filter(domain => domain.isActive).map(domain => domain.domain));
-      const decision = applySafetyDecision(input.body, matches, blockedUrls);
-      if (!decision.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: decision.explanation ?? "This message cannot be sent" });
-      const messageId = await createMessage(ctx.user.id, input.conversationId, decision.safeText ?? input.body, "published");
-      return { messageId, safety: { action: decision.action, maskedText: decision.safeText, highestRisk: matches[0]?.severity ?? (blockedUrls.length ? "high" : "low") } };
+      const result = await createMessageWithSafetyAudit(ctx.user.id, input.conversationId, input.body);
+      return { messageId: result.messageId, safety: { action: result.decision.action, maskedText: result.decision.safeText, highestRisk: result.matches[0]?.severity ?? (result.blockedUrls.length ? "high" : "low") } };
     }),
     blockUser: protectedProcedure.input(z.object({ userId: z.number().int().positive(), reason: z.string().trim().max(200).optional() })).mutation(async ({ input, ctx }) => ({ blockId: await setUserBlock(ctx.user.id, input.userId, input.reason) })),
     unblockUser: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).mutation(async ({ input, ctx }) => { await revokeUserBlock(ctx.user.id, input.userId); return { success: true } as const; }),
@@ -244,46 +243,20 @@ export const appRouter = router({
     postComments: protectedProcedure.input(z.object({ postId: z.number().int().positive() })).query(({ input }) => listPostComments(input.postId)),
     createPost: protectedProcedure.input(contentInput.extend({ communityId: z.number().int().positive().optional() })).mutation(async ({ input, ctx }) => {
       if (input.communityId && !(await isActiveCommunityMember(input.communityId, ctx.user.id))) throw new TRPCError({ code: "FORBIDDEN", message: "Join the active community before posting" });
-      const [rules, domains] = await Promise.all([listSafetyRules(), listBlockedDomains()]);
-      const matches = evaluateSafetyRules(input.body, "posts", rules);
-      const blockedUrls = findBlockedDomains(input.body, domains.filter(domain => domain.isActive).map(domain => domain.domain));
-      const decision = applySafetyDecision(input.body, matches, blockedUrls);
-      if (!decision.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: decision.explanation ?? "This post cannot be shared" });
-      const postId = await createPostWithAudit({ authorId: ctx.user.id, communityId: input.communityId, body: decision.safeText ?? input.body, status: "published" }, { actorType: "user", actorId: ctx.user.id, action: "post.create", resourceType: "post", metadata: JSON.stringify({ communityId: input.communityId, safetyAction: decision.action }) });
-      return { postId, safety: { action: decision.action, maskedText: decision.safeText, highestRisk: matches[0]?.severity ?? (blockedUrls.length ? "high" : "low") } };
+      const result = await createPostWithSafetyAudit({ authorId: ctx.user.id, communityId: input.communityId, body: input.body, status: "published" }, { actorType: "user", actorId: ctx.user.id, action: "post.create", resourceType: "post", metadata: JSON.stringify({ communityId: input.communityId }) }, input.body);
+      return { postId: result.postId, safety: { action: result.decision.action, maskedText: result.decision.safeText, highestRisk: result.matches[0]?.severity ?? (result.blockedUrls.length ? "high" : "low") } };
     }),
     createComment: protectedProcedure.input(contentInput.extend({ postId: z.number().int().positive() })).mutation(async ({ input, ctx }) => {
       const post = await getPost(input.postId);
       if (!post) throw new TRPCError({ code: "NOT_FOUND", message: "Post not found" });
       if (post.communityId && !(await isActiveCommunityMember(post.communityId, ctx.user.id))) throw new TRPCError({ code: "FORBIDDEN", message: "Join the active community before commenting" });
-      const [rules, domains] = await Promise.all([listSafetyRules(), listBlockedDomains()]);
-      const matches = evaluateSafetyRules(input.body, "comments", rules);
-      const blockedUrls = findBlockedDomains(input.body, domains.filter(domain => domain.isActive).map(domain => domain.domain));
-      const decision = applySafetyDecision(input.body, matches, blockedUrls);
-      if (!decision.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: decision.explanation ?? "This comment cannot be shared" });
-      const commentId = await createCommentWithAudit({ postId: input.postId, authorId: ctx.user.id, body: decision.safeText ?? input.body, status: "published" }, { actorType: "user", actorId: ctx.user.id, action: "comment.create", resourceType: "comment", metadata: JSON.stringify({ postId: input.postId, safetyAction: decision.action }) });
-      return { commentId, safety: { action: decision.action, maskedText: decision.safeText, highestRisk: matches[0]?.severity ?? (blockedUrls.length ? "high" : "low") } };
+      const result = await createCommentWithSafetyAudit({ postId: input.postId, authorId: ctx.user.id, body: input.body, status: "published" }, { actorType: "user", actorId: ctx.user.id, action: "comment.create", resourceType: "comment", metadata: JSON.stringify({ postId: input.postId }) }, input.body);
+      return { commentId: result.commentId, safety: { action: result.decision.action, maskedText: result.decision.safeText, highestRisk: result.matches[0]?.severity ?? (result.blockedUrls.length ? "high" : "low") } };
     }),
     upsertMyProfile: protectedProcedure.input(profileInput).mutation(async ({ input, ctx }) => {
-      const [rules, domains] = await Promise.all([listSafetyRules(), listBlockedDomains()]);
       const textFields = ["displayName", "introduction", "religion", "country", "city", "profession", "education", "languages", "marriageExpectations"] as const;
-      const safeValues: Record<string, unknown> = {};
-      const safetyAudits: Array<{ actorType: "user"; actorId: number; action: string; resourceType: string; metadata: string }> = [];
-      for (const field of textFields) {
-        const value = input[field];
-        if (value === undefined) continue;
-        const matches = evaluateSafetyRules(value, "profiles", rules);
-        const blockedUrls = findBlockedDomains(value, domains.filter(domain => domain.isActive).map(domain => domain.domain));
-        const decision = applySafetyDecision(value, matches, blockedUrls);
-        if (!decision.allowed) throw new TRPCError({ code: "BAD_REQUEST", message: decision.explanation ?? "This profile content cannot be shared" });
-        safeValues[field] = decision.safeText ?? value;
-        if (decision.action !== "allow") safetyAudits.push({ actorType: "user", actorId: ctx.user.id, action: "profile.content_sanitized", resourceType: "profile", metadata: JSON.stringify({ field, action: decision.action }) });
-      }
-      if (input.ownerConsent) safeValues.ownerConsent = JSON.stringify(input.ownerConsent);
-      if (input.ownerPrivacy) safeValues.ownerPrivacy = JSON.stringify(input.ownerPrivacy);
-      if (input.profileStatus) safeValues.profileStatus = input.profileStatus;
-      const profileId = await upsertUserProfileWithAudit(ctx.user.id, safeValues, safetyAudits);
-      return { profileId, profile: await getUserProfile(ctx.user.id) };
+      const result = await upsertUserProfileWithSafetyAudit(ctx.user.id, { ...input, ownerConsent: input.ownerConsent ? JSON.stringify(input.ownerConsent) : undefined, ownerPrivacy: input.ownerPrivacy ? JSON.stringify(input.ownerPrivacy) : undefined }, textFields);
+      return { profileId: result.profileId, profile: await getUserProfile(ctx.user.id) };
     }),
     auditLogs: adminProcedure.query(() => listAuditLogs()),
     telegramStatus: adminProcedure.query(() => telegramIntegrationStatus()),
